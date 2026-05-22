@@ -21,6 +21,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.hgbrasil.client import get_quotes
 from app.simulation.engine import run_simulation
 from app.simulation.strategies import STRATEGIES
+from app.skills.shared.macro import load_macro_context
+from app.skills.shared.risk import calculate_risk_async, check_circuit_breaker, correlation_matrix
+from app.skills.shared.portfolio import track_portfolio
+from app.skills.shared.sentiment import analyze_sentiment
+from app.skills.stocks.technical import detect_patterns_async
+from app.skills.stocks.fundamental import parse_quarterly_earnings_async, peer_comparison_async, dcf_valuation
+from app.models import PortfolioInput, PortfolioPosition
 
 import os as _os
 _MCP_HOST = _os.environ.get("MCP_HOST", "127.0.0.1")
@@ -217,6 +224,233 @@ def list_strategies() -> dict:
             "take_profit": "default +20% from entry",
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# Tool 5 — Macro context (BCB: Selic, IPCA, USD/BRL, Ibovespa)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def get_macro_context() -> dict:
+    """
+    Fetch current Brazilian macro indicators from BCB (Banco Central do Brasil).
+
+    Returns Selic rate, IPCA 12-month, USD/BRL PTax, Ibovespa daily change,
+    B3 market open/closed status, and timestamp.
+    """
+    ctx = await load_macro_context()
+    return ctx.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 6 — Risk analysis (VaR, Sharpe, Sortino, beta, Kelly)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def analyze_risk(
+    ticker: str,
+    period: str = "1y",
+    risk_free_annual: float = 0.105,
+) -> dict:
+    """
+    Full risk profile for a B3 stock using historical data.
+
+    Computes:
+    - VaR 95% and 99% (historical percentile method)
+    - Max drawdown
+    - Sharpe and Sortino ratios (annualized, vs Selic ~10.5%)
+    - Beta vs IBOVESPA
+    - Annualized volatility
+    - Kelly Criterion position sizing (capped at 10%)
+
+    Args:
+        ticker: B3 symbol, e.g. "PETR4"
+        period: History window — "6mo", "1y", "2y"
+        risk_free_annual: Annual risk-free rate (default 10.5% = ~Selic)
+    """
+    metrics = await calculate_risk_async(ticker, period)
+    return metrics.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 7 — Circuit breaker check
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def check_stock_circuit_breaker(
+    ticker: str,
+    daily_loss_limit_pct: float = 2.0,
+    weekly_loss_limit_pct: float = 5.0,
+) -> dict:
+    """
+    Check if a ticker has breached daily or weekly loss thresholds.
+
+    If triggered, all operations on this ticker should be halted.
+
+    Args:
+        ticker: B3 symbol
+        daily_loss_limit_pct: Halt if daily loss >= this % (default 2%)
+        weekly_loss_limit_pct: Halt if weekly loss >= this % (default 5%)
+    """
+    result = check_circuit_breaker(ticker, daily_loss_limit_pct, weekly_loss_limit_pct)
+    return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 8 — Correlation matrix
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def get_correlation_matrix(
+    tickers: list[str],
+    period: str = "1y",
+) -> dict:
+    """
+    Compute pairwise Pearson correlation between B3 assets.
+
+    Flags pairs with |correlation| >= 0.7 as high concentration risk.
+
+    Args:
+        tickers: List of B3 symbols
+        period: History window — "6mo", "1y", "2y"
+    """
+    result = correlation_matrix(tickers, period)
+    return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 9 — Portfolio tracker (P&L, sector exposure)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def track_portfolio_positions(
+    positions: list[dict],
+    cash: float = 0.0,
+) -> dict:
+    """
+    Calculate current portfolio state: market value, P&L per position,
+    sector exposure, and top/worst performer.
+
+    Args:
+        positions: List of {"ticker": "PETR4", "quantity": 100, "avg_price": 35.50}
+        cash: Cash balance in BRL not invested in stocks
+
+    Returns:
+        Total value, invested value, per-position P&L, sector weights,
+        circuit-breaker flag (any position down > 8%).
+    """
+    parsed = [
+        PortfolioPosition(ticker=p["ticker"].upper(), quantity=p["quantity"], avg_price=p["avg_price"])
+        for p in positions
+    ]
+    portfolio = PortfolioInput(positions=parsed, cash=cash)
+    summary = await track_portfolio(portfolio)
+    return summary.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 10 — News sentiment analysis
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def get_sentiment(
+    ticker: str,
+    max_articles: int = 10,
+) -> dict:
+    """
+    Analyze recent Portuguese-language financial news sentiment for a ticker.
+
+    Sources: InfoMoney RSS, Investing.com BR RSS.
+    Scoring: keyword lexicon (PT-BR), range -1.0 (very negative) to +1.0 (very positive).
+
+    Args:
+        ticker: B3 symbol, e.g. "PETR4"
+        max_articles: Maximum headlines to return (default 10)
+    """
+    result = await analyze_sentiment(ticker, max_articles)
+    return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 11 — Technical pattern detection
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def technical_analysis(
+    ticker: str,
+    period: str = "6mo",
+) -> dict:
+    """
+    Compute technical indicators and derive a buy/sell/hold signal.
+
+    Indicators: RSI-14, MACD (12/26/9), EMA 9/21/200,
+    Bollinger Bands (20, 2σ), candlestick patterns.
+
+    Returns signal ("buy" | "sell" | "hold"), confidence 0-1,
+    and list of supporting reasons.
+
+    Args:
+        ticker: B3 symbol, e.g. "PETR4"
+        period: Data window — "3mo", "6mo", "1y"
+    """
+    result = await detect_patterns_async(ticker, period)
+    return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 12 — Fundamental analysis
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def fundamental_analysis(
+    ticker: str,
+) -> dict:
+    """
+    Fetch key fundamental metrics for a B3 stock via Yahoo Finance.
+
+    Returns P/E, P/B, ROE, EV/EBITDA, revenue growth YoY,
+    net margin, D/E ratio, dividend yield, and a simplified DCF fair value.
+
+    Args:
+        ticker: B3 symbol, e.g. "PETR4"
+    """
+    result = await parse_quarterly_earnings_async(ticker)
+    return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 13 — DCF valuation (configurable)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def run_dcf_valuation(
+    ticker: str,
+    wacc: float = 0.12,
+    growth_rate: float = 0.05,
+) -> dict:
+    """
+    Run a simplified DCF valuation with configurable WACC and growth rate.
+
+    Model: P = EPS × (1 + g) / (WACC − g)
+
+    Args:
+        ticker: B3 symbol
+        wacc: Weighted average cost of capital (default 12% — Brazilian risk premium)
+        growth_rate: Perpetual earnings growth rate (default 5%)
+    """
+    return dcf_valuation(ticker, wacc, growth_rate)
+
+
+# ---------------------------------------------------------------------------
+# Tool 14 — Peer comparison
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def compare_peers(
+    ticker: str,
+    peers: list[str],
+) -> dict:
+    """
+    Compare a B3 stock against sector peers on key fundamental multiples.
+
+    Metrics: P/E, P/B, ROE, EV/EBITDA, dividend yield, net margin.
+
+    Args:
+        ticker: Main ticker to evaluate, e.g. "PETR4"
+        peers: Peer tickers, e.g. ["CSAN3", "UGPA3", "VBBR3"]
+    """
+    result = await peer_comparison_async(ticker, peers)
+    return result.model_dump()
 
 
 if __name__ == "__main__":
