@@ -22,8 +22,14 @@ from app.hgbrasil.client import get_quotes
 from app.simulation.engine import run_simulation
 from app.simulation.strategies import STRATEGIES
 
+import os as _os
+_MCP_HOST = _os.environ.get("MCP_HOST", "127.0.0.1")
+_MCP_PORT = int(_os.environ.get("MCP_PORT", "8001"))
+
 mcp = FastMCP(
     "investimentos-ai",
+    host=_MCP_HOST,
+    port=_MCP_PORT,
     instructions=(
         "Financial AI tools for the Brazilian stock market (B3). "
         "Use get_stock_quotes for real-time prices, simulate_investment for backtesting, "
@@ -225,4 +231,4 @@ if __name__ == "__main__":
     if transport == "stdio":
         mcp.run(transport="stdio")
     else:
-        mcp.run(transport="streamable-http", host="0.0.0.0", port=port)
+        mcp.run(transport="streamable-http")
