@@ -7,7 +7,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 
 $Now = Get-Date
-$SessionId = $Now.ToString("yyyy-MM-dd-HHh")
+$SessionId = $Now.ToString("yyyy-MM-dd-HH") + "h"
 
 $LogDir = Join-Path $ProjectRoot "logs"
 if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir | Out-Null }
