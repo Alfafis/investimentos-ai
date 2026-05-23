@@ -10,8 +10,8 @@ investimentos-ai/
 │   ├── config.py               # Settings via pydantic-settings
 │   ├── models.py               # Pydantic models (Quote, Trade, SimulationResult…)
 │   ├── main.py                 # FastAPI app + CORS
-│   ├── hgbrasil/
-│   │   └── client.py           # Async client — Redis cache → in-memory fallback
+│   ├── quotes/
+│   │   └── client.py           # yfinance client — Redis cache → in-memory fallback
 │   ├── simulation/
 │   │   ├── strategies.py       # Buy/sell criteria (4 strategies)
 │   │   └── engine.py           # Backtesting engine via yfinance
@@ -36,13 +36,10 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-HGBRASIL_API_KEY=your_api_key_here
 APP_PORT=8000
 CACHE_TTL_SECONDS=60
 REDIS_URL=redis://redis:6379/0
 ```
-
-Get your API key at [hgbrasil.com](https://hgbrasil.com).
 
 ### 2. Docker (recommended)
 
@@ -192,7 +189,7 @@ See `claude_desktop_config.example.json` for reference.
 
 | Tool | Description |
 |------|-------------|
-| `get_stock_quotes` | Real-time B3 prices from HG Brasil API |
+| `get_stock_quotes` | B3 prices via Yahoo Finance (~15min delay) |
 | `simulate_investment` | Backtest a strategy on historical data |
 | `screen_stocks` | Filter buy candidates by dividend yield and daily drop |
 | `list_strategies` | List strategies with buy/sell criteria |
@@ -213,7 +210,7 @@ Faz um screening das ações [PETR4, VALE3, BBDC4, ITUB4, WEGE3] com dividend yi
 
 | Data | Source | Use |
 |------|--------|-----|
-| Real-time quotes | [HG Brasil API](https://hgbrasil.com/docs/finance/stocks) | Quotes, dividend yield, market cap |
+| Quotes (~15min delay) | Yahoo Finance via `yfinance` | Prices, dividend yield, market cap |
 | Historical OHLCV | Yahoo Finance via `yfinance` | Backtesting and indicator calculation |
 
 > **Note:** For production backtesting, replace `yfinance` with B3 Market Data or Economatica — Yahoo Finance data for B3 tickers can have gaps and delays.

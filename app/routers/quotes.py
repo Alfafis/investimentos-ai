@@ -55,7 +55,7 @@ async def get_quotes(
     try:
         data = await _get_quotes(b3_tickers, sort)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"HG Brasil API error: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"quotes client error: {exc}") from exc
 
     meta = data.get("metadata") or {}
     return QuotesResponse(
@@ -75,7 +75,7 @@ async def get_quote(ticker: str):
     try:
         data = await _get_quotes([b3_ticker])
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"HG Brasil API error: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"quotes client error: {exc}") from exc
 
     results = _parse_results(data)
     if not results:

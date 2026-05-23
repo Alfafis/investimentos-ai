@@ -36,7 +36,7 @@ docs/
 | Stack backend | Python — FastAPI + CrewAI + FastMCP |
 | LLM | Claude (function calling nativo via MCP) |
 | Dados históricos | yfinance (B3: sufixo `.SA`) |
-| Dados real-time | HG Brasil Finance API |
+| Dados real-time | PENDENTE |
 | Macro gratuito | BCB API (Selic série 11, IPCA série 13522, PTax) |
 | Cache | Redis + fallback in-memory |
 | Deploy | Docker Compose (redis + api + mcp) |
@@ -46,7 +46,7 @@ docs/
 
 ```
 app/
-├── hgbrasil/         # Client HG Brasil (cotações real-time)
+├── quotes/           # yfinance client (cotações ~15min delay)
 ├── simulation/       # Backtesting engine (RSI, EMA, Combined, Dividend Value)
 ├── skills/
 │   ├── shared/       # macro, risk, portfolio, sentiment
@@ -78,7 +78,7 @@ mcp_server/
 
 | Área | Fontes |
 |---|---|
-| Bolsa BR (real-time) | HG Brasil Finance API |
+| Bolsa BR (cotações ~15min) | yfinance (`.SA` suffix) |
 | Bolsa BR (histórico) | yfinance (`.SA` suffix) |
 | Macro BR | BCB API (gratuita, sem key) |
 | Notícias | InfoMoney RSS, Investing.com BR RSS |

@@ -6,7 +6,7 @@ from app.routers import quotes, simulation, analysis, agent
 app = FastAPI(
     title="Investimentos AI",
     description=(
-        "Real-time B3 stock quotes via HG Brasil API "
+        "B3 stock quotes via yfinance "
         "and investment simulation engine with multiple strategies."
     ),
     version="1.0.0",
