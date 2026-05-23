@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import quotes, simulation, analysis, agent
+from app.routers import quotes, simulation, analysis
 
 app = FastAPI(
     title="Investimentos AI",
@@ -24,7 +24,6 @@ app.add_middleware(
 app.include_router(quotes.router)
 app.include_router(simulation.router)
 app.include_router(analysis.router)
-app.include_router(agent.router)
 
 
 @app.get("/health", tags=["infra"])

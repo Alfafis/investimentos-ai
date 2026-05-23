@@ -1,0 +1,91 @@
+﻿[2026-05-23-186] Iniciando sessao do agente
+---
+
+## ­ƒôè Relat├│rio Sess├úo 2026-05-23-186 ÔÇö Pr├®-Mercado
+
+### ­ƒÅª Macro
+| Indicador | Valor | Status |
+|---|---|---|
+| Mercado B3 | **FECHADO** | 18:20 BRT |
+| Selic API | 5,34% | ÔÜá´©Å Diverge da sess├úo anterior (13,75%) ÔÇö validar |
+| IPCA 12m | 4,39% | OK |
+| USD/BRL | ÔÇö | ÔÜá´©Å PTax n├úo retornado |
+| Ibovespa dia | -0,81% | Normal ┬À circuit breaker N├âO ativado |
+
+---
+
+### ­ƒÆ╝ Estado da Carteira
+| Item | Valor |
+|---|---|
+| Caixa | R$ 5.000 |
+| VALE3 (8 un @ R$58,20) | Custo R$465,60 ÔåÆ Atual **R$664,80** |
+| P&L n├úo realizado | **+R$199,20 (+42,84%)** ­ƒö┤ |
+| P&L realizado (PETR4) | +R$31,20 (+6,58%) Ô£à |
+| Valor total portf├│lio | R$ 5.664,80 |
+
+---
+
+### ­ƒÜ¿ Alertas (por prioridade)
+
+**1. TAKE-PROFIT VALE3 ÔÇö CR├ìTICO**
+VALE3 est├í +42,84% vs threshold de +20%. Playbook exige **venda parcial ou total**. Execu├º├úo obrigat├│ria na abertura de 24/05. Fundamentos corroboram sa├¡da: P/L 25 (falha crit├®rio), ROE 6,84% < 10% (falha), DCF upside **-40%** (ativo sobrevalorizado pelo modelo).
+
+**2. Qualidade de dados ÔÇö Selic**
+API BCB retornou 5,34% vs 13,75% da sess├úo anterior. Poss├¡vel s├®rie errada. N├úo usar Selic como fator decis├│rio at├® valida├º├úo manual.
+
+**3. VALE3 sem decision_id de compra**
+Posi├º├úo aberta n├úo tem correspond├¬ncia no decision log. Pr├│ximas sess├Áes: `save_paper_trade` obrigat├│rio no mesmo ciclo.
+
+---
+
+### ­ƒôê Scores ÔÇö Watchlist Completa
+
+| # | Ticker | Score | T├®cnica | Fund. | Rec. | Decis├úo |
+|---|---|---|---|---|---|---|
+| 1 | **ABEV3** | **0.755** | 1.0 | 0.6 | buy | Ô£à **APROVADO** |
+| 2 | PETR4 | 0.635 | 0.5 | 0.8 | buy | ÔØî **VETADO** |
+| 3 | SUZB3 | 0.635 | 0.5 | 0.8 | buy | ÔØî **VETADO** |
+| 4 | **CMIG4** | **0.635** | 0.5 | 0.8 | buy | ÔÜá´©Å **CONDICIONAL** |
+| 5 | BBAS3 | 0.595 | 0.6 | 0.6 | hold | ÔÇö |
+| 6 | ITUB4 | 0.535 | 0.25 | 0.8 | hold | ÔÇö |
+| 7 | VALE3 | 0.462 | 0.67 | 0.2 | hold | ­ƒö┤ VENDER |
+| 8 | GGBR4 | 0.395 | 0.5 | 0.2 | skip | ÔÇö |
+| 9 | WEGE3 | 0.375 | 0.25 | 0.4 | skip | ÔÇö |
+| 10 | RENT3 | 0.195 | 0.0 | 0.2 | skip | ÔÇö |
+
+---
+
+### ­ƒôï Vetos com justificativa audit├ível
+
+**SUZB3 ÔÇö VETO HARD (playbook):** Pre├ºo R$41,70 abaixo da EMA200 R$49,46. Crit├®rio obrigat├│rio sec. 4.2: *"Tend├¬ncia: pre├ºo acima da EMA200"*. Score ÔëÑ 0.6 n├úo sobrep├Áe gate t├®cnico.
+
+**PETR4 ÔÇö VETO SOFT (confirma├º├úo):** MACD histograma -0,296 (negativo) + death cross EMA9/EMA21. Sec. 4.2: *"Confirma├º├úo: MACD histograma positivo ou cruzamento bullish"*. Aguardar virada. Fundamentos excelentes (P/L 5.47, ROE 25.6%) ÔÇö monitorar.
+
+---
+
+### ­ƒÄ» Plano de Execu├º├úo ÔÇö Abertura 24/05
+
+| Prior. | A├º├úo | Ativo | Qtd/Valor | Condi├º├úo |
+|---|---|---|---|---|
+| 1 | **VENDER** | VALE3 | 8 un | Mercado ÔÇö obrigat├│rio |
+| 2 | **COMPRAR** | ABEV3 | R$ 500 | Reconfirmar MACD hist > 0 |
+| 3 | **COMPRAR** | CMIG4 | R$ 400 | **SE** MACD hist > 0 E pre├ºo > R$11,10 |
+
+**Sizing:** Kelly cap por posi├º├úo = R$566 ┬À Risco m├íx/opera├º├úo = R$113 (2% do capital) ┬À Reserva m├¡nima = R$566 garantida.
+
+**Caixa ap├│s execu├º├úo (estimado):** R$4.764 (84,1% do portf├│lio ÔÇö bem acima do m├¡nimo de 10%).
+
+---
+
+### ­ƒôÉ Cen├írios para 24/05
+
+| Cen├írio | Descri├º├úo | P&L esperado |
+|---|---|---|
+| **Otimista** | VALE3 vendida + ABEV3 + CMIG4 confirmados | +R$199 realizado + potencial upside |
+| **Realista** | VALE3 vendida + ABEV3 comprada, CMIG4 n├úo confirma | +R$199 realizado, ABEV3 em monitoramento |
+| **Pessimista** | Gap down VALE3 pr├®-venda, ABEV3 RSI sobe | +R$50-150, sem novas posi├º├Áes |
+
+---
+
+Decis├úo salva: `id=2`, `session_id=2026-05-23-186`. Pipeline completo. Aguarda abertura B3 24/05/2026 para execu├º├úo com aprova├º├úo humana.
+[2026-05-23-186] Sessao concluida com sucesso
