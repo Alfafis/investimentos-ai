@@ -21,15 +21,20 @@ def _safe_float(val) -> Optional[float]:
         return None
 
 
-def parse_quarterly_earnings(ticker: str) -> FundamentalMetrics:
+def parse_quarterly_earnings(ticker: str, info: Optional[dict] = None) -> FundamentalMetrics:
     """
     Pull key fundamental metrics from yfinance.
 
     Returns P/E, P/B, ROE, EV/EBITDA, revenue growth YoY,
     net margin, D/E ratio, dividend yield, and DCF fair value estimate.
+
+    Args:
+        ticker: B3 symbol, e.g. "PETR4"
+        info: pre-fetched yfinance info dict (skips HTTP call when provided)
     """
-    sym = _to_yf_ticker(ticker)
-    info = yf.Ticker(sym).info
+    if info is None:
+        sym = _to_yf_ticker(ticker)
+        info = yf.Ticker(sym).info
 
     pe = _safe_float(info.get("trailingPE"))
     pb = _safe_float(info.get("priceToBook"))
@@ -48,8 +53,7 @@ def parse_quarterly_earnings(ticker: str) -> FundamentalMetrics:
 
     debt_equity = _safe_float(info.get("debtToEquity"))
     dividend_yield = _safe_float(info.get("dividendYield"))
-    if dividend_yield is not None:
-        dividend_yield = round(dividend_yield * 100, 2)
+    # yfinance returns dividendYield for .SA stocks already as percentage (e.g. 8.72 = 8.72%)
 
     current_price = _safe_float(info.get("currentPrice") or info.get("regularMarketPrice"))
 
@@ -147,9 +151,9 @@ def peer_comparison(ticker: str, peers: list[str]) -> PeerComparison:
     return PeerComparison(ticker=ticker, peers=peers, metrics=metrics_map)
 
 
-async def parse_quarterly_earnings_async(ticker: str) -> FundamentalMetrics:
+async def parse_quarterly_earnings_async(ticker: str, info: Optional[dict] = None) -> FundamentalMetrics:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, lambda: parse_quarterly_earnings(ticker))
+    return await loop.run_in_executor(None, lambda: parse_quarterly_earnings(ticker, info))
 
 
 async def peer_comparison_async(ticker: str, peers: list[str]) -> PeerComparison:

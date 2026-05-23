@@ -179,12 +179,8 @@ Add to your `claude_desktop_config.json`:
 {
   "mcpServers": {
     "investimentos-ai": {
-      "command": "python",
-      "args": ["-m", "mcp_server.server"],
-      "cwd": "/path/to/investimentos-ai",
-      "env": {
-        "HGBRASIL_API_KEY": "your_api_key_here"
-      }
+      "type": "http",
+      "url": "http://127.0.0.1:8001/mcp"
     }
   }
 }

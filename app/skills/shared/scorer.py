@@ -7,7 +7,14 @@ Score >= 0.6 → recomendação de compra.
 Filtros de qualidade são gates hard: falha = "skip" independente do score.
 """
 import asyncio
+import logging
 from datetime import datetime, timezone
+from typing import Optional
+
+import pandas as pd
+import yfinance as yf
+
+logger = logging.getLogger(__name__)
 
 from app.models import (
     FundamentalMetrics,
@@ -21,11 +28,13 @@ from app.skills.shared.macro import load_macro_context
 from app.skills.shared.sentiment import analyze_sentiment
 from app.skills.stocks.fundamental import parse_quarterly_earnings_async
 from app.skills.stocks.technical import detect_patterns_async
+from app.simulation.engine import _to_yf_ticker
 
 _MIN_DAILY_VOLUME_BRL = 5_000_000    # R$ 5M
 _MIN_MARKET_CAP_BRL = 500_000_000   # R$ 500M
 _BUY_THRESHOLD = 0.60
 _HOLD_THRESHOLD = 0.40
+_INFO_CONCURRENCY = 3
 
 
 def _technical_score(signal: TechnicalSignal) -> tuple[float, list[str]]:
@@ -66,7 +75,6 @@ def _fundamental_score(fm: FundamentalMetrics) -> tuple[float, list[str]]:
 
 
 def _sentiment_score(sr: SentimentResult) -> tuple[float, list[str]]:
-    # sr.score: -1 to +1 → normalize to 0-1
     score = round((sr.score + 1) / 2, 3)
     reasons = [f"Sentimento: {sr.label} (score {sr.score:+.3f}, {sr.articles_analyzed} artigos)"]
     return score, reasons
@@ -115,23 +123,21 @@ def _quality_filters(fm: FundamentalMetrics) -> tuple[bool, list[str]]:
 async def score_ticker(
     ticker: str,
     macro_context: MacroContext | None = None,
+    df: Optional[pd.DataFrame] = None,
+    info: Optional[dict] = None,
 ) -> ScoreResult:
     """
     Score combinado para decisão de compra em um ticker B3.
 
-    Fetches técnica, fundamental e sentimento em paralelo.
-    Aplica filtros de qualidade como gate hard antes do score.
-
     Args:
         ticker: símbolo B3, ex: "PETR4"
         macro_context: contexto macro já carregado (evita nova chamada BCB)
-
-    Returns:
-        ScoreResult com score 0-1, breakdown, recomendação e razões
+        df: OHLCV pré-fetched (evita download yfinance)
+        info: yfinance info dict pré-fetched (evita chamada HTTP)
     """
     technical, fundamental, sentiment, macro = await asyncio.gather(
-        detect_patterns_async(ticker),
-        parse_quarterly_earnings_async(ticker),
+        detect_patterns_async(ticker, df=df),
+        parse_quarterly_earnings_async(ticker, info=info),
         analyze_sentiment(ticker),
         load_macro_context() if macro_context is None else _noop(macro_context),
     )
@@ -181,20 +187,73 @@ async def score_ticker(
     )
 
 
+async def _fetch_ticker_info(sym: str, sem: asyncio.Semaphore) -> tuple[str, dict]:
+    async with sem:
+        try:
+            info = await asyncio.to_thread(lambda: yf.Ticker(sym).info or {})
+            return sym, info
+        except Exception as exc:
+            logger.warning("info fetch failed for %s: %s", sym, exc)
+            return sym, {}
+
+
+def _slice_ohlcv(raw_df: pd.DataFrame, sym: str) -> Optional[pd.DataFrame]:
+    if raw_df.empty:
+        return None
+    try:
+        if isinstance(raw_df.columns, pd.MultiIndex):
+            df = raw_df.xs(sym, level=1, axis=1)
+        else:
+            df = raw_df  # single-ticker download has flat columns
+        return df if not df.empty else None
+    except KeyError:
+        return None
+
+
 async def score_watchlist(
     tickers: list[str],
     macro_context: MacroContext | None = None,
 ) -> list[ScoreResult]:
-    """Score todos os tickers da watchlist em paralelo, ordena por score desc."""
+    """
+    Score todos os tickers: pré-fetcha OHLCV em batch (1 call) e info com
+    concorrência limitada (max 3), depois analisa sem mais chamadas yfinance.
+    """
     if macro_context is None:
         macro_context = await load_macro_context()
 
+    yf_syms = [_to_yf_ticker(t) for t in tickers]
+
+    # 1 HTTP call para todo OHLCV histórico
+    raw_df: pd.DataFrame = await asyncio.to_thread(
+        yf.download, yf_syms, period="1y", auto_adjust=True, progress=False
+    )
+
+    # info calls com throttle — max 3 simultâneos
+    info_sem = asyncio.Semaphore(_INFO_CONCURRENCY)
+    info_pairs = await asyncio.gather(
+        *[_fetch_ticker_info(sym, info_sem) for sym in yf_syms]
+    )
+    info_map: dict[str, dict] = dict(info_pairs)
+
+    # score sem yfinance calls — dados já em memória
     results = await asyncio.gather(
-        *[score_ticker(t, macro_context) for t in tickers],
+        *[
+            score_ticker(
+                t,
+                macro_context,
+                df=_slice_ohlcv(raw_df, yf_syms[i]),
+                info=info_map.get(yf_syms[i]) or {},
+            )
+            for i, t in enumerate(tickers)
+        ],
         return_exceptions=True,
     )
 
     valid = [r for r in results if isinstance(r, ScoreResult)]
+    failed = [tickers[i] for i, r in enumerate(results) if not isinstance(r, ScoreResult)]
+    if failed:
+        logger.warning("score_watchlist: %d tickers failed — %s", len(failed), failed)
+
     valid.sort(key=lambda r: r.score.combined, reverse=True)
     return valid
 

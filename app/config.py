@@ -3,8 +3,6 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    hgbrasil_api_key: str
-    hgbrasil_base_url: str = "https://api.hgbrasil.com/v2/finance/quotes"
     app_port: int = 8000
     app_host: str = "0.0.0.0"
     cache_ttl_seconds: int = 60

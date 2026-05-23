@@ -98,18 +98,20 @@ def _detect_candlestick(df: pd.DataFrame) -> Optional[str]:
     return None
 
 
-def detect_patterns(ticker: str, period: str = "6mo") -> TechnicalSignal:
+def detect_patterns(ticker: str, period: str = "1y", df: Optional[pd.DataFrame] = None) -> TechnicalSignal:
     """
     Compute technical indicators and derive buy/sell/hold signal.
 
     Args:
         ticker: B3 symbol, e.g. "PETR4"
         period: yfinance period — "3mo", "6mo", "1y"
+        df: pre-fetched OHLCV DataFrame (skips yfinance download when provided)
 
     Returns:
         TechnicalSignal with indicators, signal, confidence, and reasons
     """
-    df = _fetch_close(ticker, period)
+    if df is None:
+        df = _fetch_close(ticker, period)
     close = df["Close"]
 
     rsi = _rsi(close)
@@ -223,6 +225,6 @@ def detect_patterns(ticker: str, period: str = "6mo") -> TechnicalSignal:
     )
 
 
-async def detect_patterns_async(ticker: str, period: str = "6mo") -> TechnicalSignal:
+async def detect_patterns_async(ticker: str, period: str = "1y", df: Optional[pd.DataFrame] = None) -> TechnicalSignal:
     loop = asyncio.get_event_loop()
-    return await loop.run_in_executor(None, lambda: detect_patterns(ticker, period))
+    return await loop.run_in_executor(None, lambda: detect_patterns(ticker, period, df))
