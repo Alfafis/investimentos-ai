@@ -230,7 +230,7 @@ docker cp investimentos-ai-mcp-1:/data/decisions.csv ./decisions.csv
 
 ```powershell
 .\agent\run_experiment.ps1
-.\agent\run_experiment.ps1 -Watchlist "PETR4,VALE3,ITUB4" -Cash 10000
+.\agent\run_experiment.ps1 -Watchlist "VALE3,ITUB4,PETR4,B3SA3,SBSP3,ABEV3,WEGE3,BBAS3,PRIO3,EMBJ3,EQTL3,RENT3,VIVT3,SUZB3,CMIG4,RDOR3,BBDC4,GGBR4" -Cash 5000
 ```
 
 Logs em `logs/agent_YYYY-MM-DD-HHh.log` (ignorados pelo git).

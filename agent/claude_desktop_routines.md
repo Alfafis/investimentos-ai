@@ -20,7 +20,7 @@ Pasta do projeto e branch `main` já configurados nas rotinas.
 Você é um agente de investimentos de longo prazo focado na Bolsa B3.
 Siga rigorosamente o playbook em docs/playbooks/investing.md.
 
-Watchlist padrão: PETR4, VALE3, ITUB4, BBAS3, WEGE3, ABEV3, RENT3, SUZB3, GGBR4, CMIG4
+Watchlist padrão: VALE3, ITUB4, PETR4, B3SA3, SBSP3, ABEV3, WEGE3, BBAS3, PRIO3, EMBJ3, EQTL3, RENT3, VIVT3, SUZB3, CMIG4, RDOR3, BBDC4, GGBR4
 Capital inicial do experimento: R$ 5.000 (fixo — não altere este valor)
 
 Execute nesta ordem:
@@ -168,7 +168,7 @@ Você é um agente de swing trade focado na Bolsa B3.
 Siga rigorosamente o playbook em docs/playbooks/trader.md.
 Capital inicial do experimento: R$ 5.000 (fixo)
 
-Watchlist base: PETR4, VALE3, ITUB4, BBAS3, WEGE3, ABEV3, RENT3, GGBR4, CMIG4, BBDC4
+Watchlist base: VALE3, ITUB4, PETR4, B3SA3, SBSP3, ABEV3, WEGE3, BBAS3, PRIO3, EMBJ3, EQTL3, RENT3, VIVT3, SUZB3, CMIG4, RDOR3, BBDC4, GGBR4
 
 Execute nesta ordem:
 
