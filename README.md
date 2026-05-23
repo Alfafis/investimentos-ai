@@ -1,39 +1,59 @@
 # Investimentos AI
 
-Python server for B3 stock market data, investment simulation, and MCP integration with Claude.
+Sistema de análise de investimentos para a Bolsa B3, composto por uma REST API, um servidor MCP com 21 ferramentas para Claude, e infraestrutura de experimento com agente autônomo.
 
-## Architecture
+## Arquitetura
 
 ```
 investimentos-ai/
 ├── app/
 │   ├── config.py               # Settings via pydantic-settings
-│   ├── models.py               # Pydantic models (Quote, Trade, SimulationResult…)
+│   ├── models.py               # Pydantic models
 │   ├── main.py                 # FastAPI app + CORS
 │   ├── quotes/
 │   │   └── client.py           # yfinance client — Redis cache → in-memory fallback
 │   ├── simulation/
-│   │   ├── strategies.py       # Buy/sell criteria (4 strategies)
-│   │   └── engine.py           # Backtesting engine via yfinance
+│   │   ├── strategies.py       # 4 estratégias (RSI, EMA, Combined, Dividend Value)
+│   │   └── engine.py           # Backtesting engine
+│   ├── skills/
+│   │   ├── shared/             # macro, risk, portfolio, sentiment, scorer, sell_evaluator
+│   │   └── stocks/             # technical, fundamental
+│   ├── agent/
+│   │   └── investing_pipeline.py  # Orquestrador do playbook (usado pelo MCP)
+│   ├── experiment/
+│   │   └── store.py            # SQLite — decisions + paper trades
 │   └── routers/
 │       ├── quotes.py           # GET /quotes
-│       └── simulation.py       # POST /simulation
+│       ├── simulation.py       # POST /simulation
+│       └── analysis.py         # GET /analysis/* (macro, risk, technical, fundamental…)
 ├── mcp_server/
-│   └── server.py               # FastMCP server — 4 tools for Claude
+│   └── server.py               # 21 MCP tools para Claude
+├── agent/
+│   ├── run_experiment.ps1      # Runner do agente autônomo (Claude Code CLI)
+│   └── setup_scheduler.ps1     # Registra task horária no Windows Task Scheduler
+├── docs/
+│   ├── playbooks/              # investing.md, trader.md — fonte de verdade do agente
+│   ├── spec/                   # agents.md, skills.md, workflows.md, infrastructure.md
+│   ├── architecture/           # frameworks.md, training.md
+│   └── research/               # methodologies.md, quantitative.md, papers.md
 ├── Dockerfile
 ├── docker-compose.yml          # api + mcp + redis
 └── .env.example
 ```
 
+**Separação de responsabilidades:**
+- **API + MCP** = dados, persistência, execução de skills determinísticas
+- **Claude (agente)** = raciocínio, regras, métricas, decisões — via MCP tools
+
+---
+
 ## Setup
 
-### 1. Environment
+### 1. Variáveis de ambiente
 
 ```bash
 cp .env.example .env
 ```
-
-Edit `.env`:
 
 ```env
 APP_PORT=8000
@@ -41,20 +61,19 @@ CACHE_TTL_SECONDS=60
 REDIS_URL=redis://redis:6379/0
 ```
 
-### 2. Docker (recommended)
+### 2. Docker (recomendado)
 
 ```bash
 docker compose up --build
 ```
 
-Services:
-| Service | URL |
+| Serviço | URL |
 |---------|-----|
 | REST API + Swagger | `http://localhost:8000/docs` |
 | MCP HTTP server | `http://localhost:8001` |
 | Redis | `localhost:6379` |
 
-### 3. Local (without Docker)
+### 3. Local (sem Docker)
 
 ```bash
 pip install -r requirements.txt
@@ -62,16 +81,18 @@ pip install -r requirements.txt
 # REST API
 uvicorn app.main:app --reload --port 8000
 
-# MCP server (stdio — for Claude Desktop)
+# MCP server (stdio — Claude Desktop)
 python -m mcp_server.server
 
-# MCP server (HTTP — for network use)
+# MCP server (HTTP)
 python -m mcp_server.server --transport streamable-http --port 8001
 ```
 
+---
+
 ## REST API
 
-### Quotes
+### Cotações
 
 ```
 GET /quotes?tickers=PETR4,VALE3,ITUB4
@@ -79,98 +100,45 @@ GET /quotes?tickers=PETR4&sort=change_percent:desc
 GET /quotes/{ticker}
 ```
 
-Sort options: `value:asc`, `value:desc`, `change_percent:asc`, `change_percent:desc`, `volume:asc`, `volume:desc`
-
-**Response:**
-
-```json
-{
-  "cached": false,
-  "response_time_ms": 120,
-  "results": [
-    {
-      "ticker": "B3:PETR4",
-      "symbol": "PETR4",
-      "name": "Petrobrás",
-      "currency": "BRL",
-      "quote": {
-        "value": 45.47,
-        "change_value": 0.47,
-        "change_percent": 1.04,
-        "market_cap": 618988000000,
-        "updated_at": "2026-05-15T17:07:45-03:00"
-      },
-      "dividends": {
-        "yield_12m_percent": 8.3,
-        "yield_12m_cash": 3.77
-      }
-    }
-  ]
-}
-```
-
-### Simulation
+### Simulação
 
 ```
 POST /simulation
 GET  /simulation/strategies
 ```
 
-**Request body:**
+### Análise
 
-```json
-{
-  "ticker": "PETR4",
-  "start_date": "2023-01-01",
-  "end_date": "2024-12-31",
-  "initial_capital": 10000.0,
-  "strategy": "combined",
-  "stop_loss_pct": 0.08,
-  "take_profit_pct": 0.20
-}
+```
+GET /analysis/macro
+GET /analysis/risk/{ticker}
+GET /analysis/technical/{ticker}
+GET /analysis/fundamental/{ticker}
+GET /analysis/sentiment/{ticker}
+GET /analysis/correlation?tickers=PETR4,VALE3
+GET /analysis/dcf/{ticker}
+GET /analysis/peers/{ticker}?peers=CSAN3,VBBR3
+POST /analysis/portfolio
 ```
 
-**Response:**
+---
 
-```json
-{
-  "ticker": "PETR4",
-  "strategy": "combined",
-  "period_start": "2023-01-02",
-  "period_end": "2024-12-30",
-  "initial_capital": 10000.0,
-  "final_capital": 13450.22,
-  "total_return_percent": 34.5,
-  "max_drawdown_percent": 11.2,
-  "total_trades": 8,
-  "winning_trades": 5,
-  "losing_trades": 2,
-  "win_rate_percent": 71.4,
-  "trades": [...],
-  "final_portfolio": [...]
-}
-```
+## Estratégias de Simulação
 
-## Strategies
-
-| Name | Buy Criterion | Sell Criterion |
-|------|--------------|----------------|
+| Nome | Critério de Compra | Critério de Venda |
+|------|-------------------|-------------------|
 | `rsi` | RSI < 30 | RSI > 70 |
-| `ema_crossover` | EMA9 crosses above EMA21 | EMA9 crosses below EMA21 |
-| `combined` ⭐ | RSI < 35 AND price above EMA200 | RSI > 65 |
-| `dividend_value` | 5-day drop > 5% AND RSI < 40 | RSI > 60 |
+| `ema_crossover` | EMA9 cruza acima EMA21 | EMA9 cruza abaixo EMA21 |
+| `combined` ⭐ | RSI < 35 E preço acima EMA200 | RSI > 65 |
+| `dividend_value` | Queda 5d > 5% E RSI < 40 | RSI > 60 |
 
-Universal exits applied to all strategies:
-- **Stop-loss:** -8% from entry (configurable)
-- **Take-profit:** +20% from entry (configurable)
+Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 
-**Recommended:** `combined` — uses EMA200 as trend filter to avoid buying in downtrends.
+---
 
-## MCP Tools (Claude integration)
+## MCP Tools (21 ferramentas para Claude)
 
-### Claude Desktop (stdio)
-
-Add to your `claude_desktop_config.json`:
+### Integração
 
 ```json
 {
@@ -183,49 +151,95 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-See `claude_desktop_config.example.json` for reference.
+### Ferramentas disponíveis
 
-### Available tools
+| # | Tool | Descrição |
+|---|------|-----------|
+| 1 | `get_stock_quotes` | Cotações B3 via Yahoo Finance (~15min delay) |
+| 2 | `simulate_investment` | Backtest de estratégia em dados históricos |
+| 3 | `screen_stocks` | Filtro por dividend yield e queda diária |
+| 4 | `list_strategies` | Lista estratégias com critérios de compra/venda |
+| 5 | `get_macro_context` | Selic, IPCA, USD/BRL, Ibovespa, mercado aberto |
+| 6 | `analyze_risk` | VaR, Sharpe, Sortino, beta, Kelly, max drawdown |
+| 7 | `check_stock_circuit_breaker` | Verifica se ticker atingiu limite de perda |
+| 8 | `get_correlation_matrix` | Correlação de Pearson entre ativos |
+| 9 | `track_portfolio_positions` | P&L, exposição setorial, melhor/pior posição |
+| 10 | `get_sentiment` | Sentimento de notícias PT-BR (InfoMoney, Investing.com) |
+| 11 | `technical_analysis` | RSI, MACD, EMA, Bollinger, padrões de candle |
+| 12 | `fundamental_analysis` | P/L, P/VP, ROE, EV/EBITDA, dividend yield, DCF |
+| 13 | `run_dcf_valuation` | DCF configurável (WACC + growth rate) |
+| 14 | `compare_peers` | Comparação de múltiplos com peers do setor |
+| 15 | `run_investing_decision` | Pipeline completo do playbook de investimentos |
+| 16 | `score_tickers` | Score combinado técnica 40% + fund. 40% + sent. 10% + macro 10% |
+| 17 | `save_decision` | Persiste contexto completo de decisão (SQLite) |
+| 18 | `get_decision_log` | Lê histórico de decisões por data ou últimas N |
+| 19 | `save_paper_trade` | Registra compra/venda virtual (paper trading) |
+| 20 | `get_paper_portfolio` | Posições abertas em papel com custo médio |
+| 21 | `get_trade_outcomes` | P&L realizado de operações fechadas + posições abertas |
 
-| Tool | Description |
-|------|-------------|
-| `get_stock_quotes` | B3 prices via Yahoo Finance (~15min delay) |
-| `simulate_investment` | Backtest a strategy on historical data |
-| `screen_stocks` | Filter buy candidates by dividend yield and daily drop |
-| `list_strategies` | List strategies with buy/sell criteria |
+---
 
-### Example prompts
+## Agente Autônomo (Experimento)
+
+Runner que executa o playbook de investimentos de hora em hora via Claude Code CLI.
+
+### Rodar manualmente
+
+```powershell
+.\agent\run_experiment.ps1
+.\agent\run_experiment.ps1 -Watchlist "PETR4,VALE3,ITUB4" -Cash 10000
+```
+
+### Ativar agendamento (Admin)
+
+```powershell
+.\agent\setup_scheduler.ps1
+```
+
+Executa seg–sex, 10h–18h, a cada 1 hora. Logs em `logs/agent_YYYY-MM-DD-HHh.log`.
+
+### Controle da task
+
+```powershell
+Start-ScheduledTask  -TaskName "InvestimentosAI-Agente"   # forçar agora
+Disable-ScheduledTask -TaskName "InvestimentosAI-Agente"  # pausar
+Unregister-ScheduledTask -TaskName "InvestimentosAI-Agente" -Confirm:$false  # remover
+```
+
+### Fluxo do agente por ciclo
 
 ```
-Busca cotações de PETR4, VALE3 e ITUB4
-```
-```
-Simula investimento de R$10.000 em VALE3 de 2022 até 2024 com estratégia combined
-```
-```
-Faz um screening das ações [PETR4, VALE3, BBDC4, ITUB4, WEGE3] com dividend yield acima de 5%
+get_macro_context → get_decision_log (últimas 3) → get_paper_portfolio
+    → run_investing_decision → save_paper_trade (sells + buys)
+    → save_decision (contexto completo)
 ```
 
-## Data Sources
+---
 
-| Data | Source | Use |
+## Fontes de Dados
+
+| Dado | Fonte | Uso |
 |------|--------|-----|
-| Quotes (~15min delay) | Yahoo Finance via `yfinance` | Prices, dividend yield, market cap |
-| Historical OHLCV | Yahoo Finance via `yfinance` | Backtesting and indicator calculation |
+| Cotações (~15min delay) | Yahoo Finance via `yfinance` | Preços, dividend yield, market cap |
+| Histórico OHLCV | Yahoo Finance via `yfinance` | Backtesting e indicadores |
+| Macro BR | BCB API (gratuita, sem key) | Selic, IPCA, PTax |
+| Notícias | InfoMoney RSS, Investing.com BR RSS | Sentimento PT-BR |
 
-> **Note:** For production backtesting, replace `yfinance` with B3 Market Data or Economatica — Yahoo Finance data for B3 tickers can have gaps and delays.
+> **Nota:** Para backtesting em produção, substituir `yfinance` por B3 Market Data ou Economatica.
 
-## Caching
+## Cache
 
-- **Primary:** Redis with configurable TTL (`CACHE_TTL_SECONDS`, default 60s)
-- **Fallback:** In-memory dict if Redis is unavailable
+- **Primário:** Redis com TTL configurável (`CACHE_TTL_SECONDS`, padrão 60s)
+- **Fallback:** dict in-memory se Redis indisponível
 
-## Next Steps
+---
 
-- [ ] FIIs support (same B3 source, different tickers)
-- [ ] Crypto vertical (CoinGecko API)
-- [ ] FX vertical (BCB API — `api.bcb.gov.br`)
-- [ ] Fundamental analysis (CVM data, pgvector RAG)
-- [ ] CrewAI swarms per vertical (Fundamentalista, Técnico, Sentimento)
-- [ ] LangGraph orchestrator for macro risk / portfolio rebalancing
-- [ ] Portfolio persistence (PostgreSQL)
+## Próximos Passos
+
+- [ ] Agentes CrewAI: Analista Fundamentalista, Analista Técnico, Agente de Sentimento
+- [ ] Pipeline Cenário A (`docs/spec/workflows.md`): Router → swarm paralelo → síntese → tese
+- [ ] FIIs (mesma fonte B3, tickers diferentes)
+- [ ] Vertical cripto (CoinGecko API)
+- [ ] Câmbio (B3 futuro, BCB PTax)
+- [ ] Análise fundamentalista via dados CVM (pgvector RAG)
+- [ ] Persistência de portfólio real (PostgreSQL)
