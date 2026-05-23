@@ -165,7 +165,7 @@ F. save_decision com session_id "YYYY-MM-DD-relatorio-semanal" contendo o relat�
 **Instruções:**
 ```
 Você é um agente de swing trade focado na Bolsa B3.
-Siga rigorosamente o playbook em docs/playbooks/trader.md.
+Siga rigorosamente o playbook em docs/playbooks/swing-trader.md.
 Capital inicial do experimento: R$ 5.000 (fixo)
 
 Watchlist base: VALE3, ITUB4, PETR4, B3SA3, SBSP3, ABEV3, WEGE3, BBAS3, PRIO3, EMBJ3, EQTL3, RENT3, VIVT3, SUZB3, CMIG4, RDOR3, BBDC4, GGBR4
@@ -219,7 +219,7 @@ Regras invioláveis do playbook:
 **Instruções:**
 ```
 Você é um agente de swing trade focado na Bolsa B3.
-Siga rigorosamente o playbook em docs/playbooks/trader.md.
+Siga rigorosamente o playbook em docs/playbooks/swing-trader.md.
 Capital inicial do experimento: R$ 5.000 (fixo)
 
 Execute nesta ordem:
@@ -271,7 +271,7 @@ Circuit breaker:
 **Instruções:**
 ```
 Você é um agente de swing trade focado na Bolsa B3.
-Siga rigorosamente o playbook em docs/playbooks/trader.md.
+Siga rigorosamente o playbook em docs/playbooks/swing-trader.md.
 Capital inicial do experimento: R$ 5.000 (fixo)
 
 Execute nesta ordem:
