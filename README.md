@@ -1,6 +1,6 @@
 # Investimentos AI
 
-Sistema de análise de investimentos para a Bolsa B3, composto por uma REST API, um servidor MCP com 21 ferramentas para Claude, e infraestrutura de experimento com agente autônomo.
+Sistema de análise de investimentos para a Bolsa B3, composto por uma REST API, um servidor MCP com 22 ferramentas para Claude, e infraestrutura de experimento com agente autônomo.
 
 ## Arquitetura
 
@@ -27,10 +27,11 @@ investimentos-ai/
 │       ├── simulation.py       # POST /simulation
 │       └── analysis.py         # GET /analysis/* (macro, risk, technical, fundamental…)
 ├── mcp_server/
-│   └── server.py               # 21 MCP tools para Claude
+│   └── server.py               # 22 MCP tools para Claude
 ├── agent/
-│   ├── run_experiment.ps1      # Runner do agente autônomo (Claude Code CLI)
-│   └── setup_scheduler.ps1     # Registra task horária no Windows Task Scheduler
+│   ├── claude_desktop_routines.md  # 5 rotinas para Claude Desktop (mecanismo principal)
+│   ├── run_experiment.ps1          # Runner manual via Claude Code CLI
+│   └── setup_scheduler.ps1         # Task Scheduler Windows (alternativa ao Desktop)
 ├── docs/
 │   ├── playbooks/              # investing.md, trader.md — fonte de verdade do agente
 │   ├── spec/                   # agents.md, skills.md, workflows.md, infrastructure.md
@@ -59,6 +60,7 @@ cp .env.example .env
 APP_PORT=8000
 CACHE_TTL_SECONDS=60
 REDIS_URL=redis://redis:6379/0
+BRAPI_API_KEY=          # obter em brapi.dev — necessário para cotações em tempo real
 ```
 
 ### 2. Docker (recomendado)
@@ -136,7 +138,7 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 
 ---
 
-## MCP Tools (21 ferramentas para Claude)
+## MCP Tools (22 ferramentas para Claude)
 
 ### Integração
 
@@ -155,7 +157,7 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 
 | # | Tool | Descrição |
 |---|------|-----------|
-| 1 | `get_stock_quotes` | Cotações B3 via Yahoo Finance (~15min delay) |
+| 1 | `get_stock_quotes` | Cotações B3 via Brapi (primário) ou yfinance fallback (~15min delay) |
 | 2 | `simulate_investment` | Backtest de estratégia em dados históricos |
 | 3 | `screen_stocks` | Filtro por dividend yield e queda diária |
 | 4 | `list_strategies` | Lista estratégias com critérios de compra/venda |
@@ -171,48 +173,67 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 | 14 | `compare_peers` | Comparação de múltiplos com peers do setor |
 | 15 | `run_investing_decision` | Pipeline completo do playbook de investimentos |
 | 16 | `score_tickers` | Score combinado técnica 40% + fund. 40% + sent. 10% + macro 10% |
-| 17 | `save_decision` | Persiste contexto completo de decisão (SQLite) |
+| 17 | `save_decision` | Persiste contexto completo de decisão no SQLite |
 | 18 | `get_decision_log` | Lê histórico de decisões por data ou últimas N |
 | 19 | `save_paper_trade` | Registra compra/venda virtual (paper trading) |
-| 20 | `get_paper_portfolio` | Posições abertas em papel com custo médio |
-| 21 | `get_trade_outcomes` | P&L realizado de operações fechadas + posições abertas |
+| 20 | `get_paper_portfolio` | Posições abertas com custo médio (FIFO) |
+| 21 | `get_trade_outcomes` | Snapshot completo: caixa, P&L realizado/não realizado, patrimônio total, retorno % |
+| 22 | `export_experiment_csv` | Exporta trades e decisões para CSV em `/data/` |
 
 ---
 
-## Agente Autônomo (Experimento)
+## Agente Autônomo (Experimento 5 dias úteis)
 
-Runner que executa o playbook de investimentos de hora em hora via Claude Code CLI.
+Experimento de paper trading com agente autônomo rodando de seg–sex via **Claude Desktop Routines**.
 
-### Rodar manualmente
+### Mecanismo principal — Claude Desktop Routines
+
+Configuração em `agent/claude_desktop_routines.md`. Importar no Claude Desktop → Routines.
+
+| Rotina | Horário | Função |
+|--------|---------|--------|
+| Investimentos — Abertura | seg–sex 10h | Macro + scoring + compras/vendas + decisão |
+| Investimentos — Fechamento | seg–sex 17h | Stops/takes + P&L do dia + prep amanhã + relatório semanal (sex) |
+| Trader — Pré-Mercado | seg–sex 09h | Análise overnight + setups do dia (swing trade) |
+| Trader — Meio-Dia | seg–sex 13h | Gestão de posições abertas + novos setups |
+| Trader — Fechamento | seg–sex 17h30 | Zerar posições + relatório + relatório semanal (sex) |
+
+### Fluxo de cada sessão
+
+```
+get_macro_context
+  → get_decision_log (últimas 3)
+  → get_paper_portfolio
+  → get_trade_outcomes(since_date="2026-05-26", initial_capital=5000)
+      # retorna: caixa, P&L realizado/não realizado, patrimônio total, retorno %
+  → run_investing_decision (ou technical_analysis para trader)
+  → save_paper_trade (sells + buys aprovados)
+  → save_decision (equity_snapshot + reasoning auditável)
+```
+
+Sextas-feiras: relatório semanal completo com patrimônio final, win rate, aprendizados.
+
+### Persistência (SQLite via Docker volume)
+
+```bash
+# Ver trades acumulados
+docker exec investimentos-ai-mcp-1 sqlite3 /data/experiment.db \
+  "SELECT action, ticker, price, quantity, reason FROM paper_trades ORDER BY timestamp"
+
+# Exportar para CSV (via MCP tool export_experiment_csv)
+# Arquivos gerados em /data/trades.csv e /data/decisions.csv
+docker cp investimentos-ai-mcp-1:/data/trades.csv ./trades.csv
+docker cp investimentos-ai-mcp-1:/data/decisions.csv ./decisions.csv
+```
+
+### Runner manual (alternativa ao Claude Desktop)
 
 ```powershell
 .\agent\run_experiment.ps1
 .\agent\run_experiment.ps1 -Watchlist "PETR4,VALE3,ITUB4" -Cash 10000
 ```
 
-### Ativar agendamento (Admin)
-
-```powershell
-.\agent\setup_scheduler.ps1
-```
-
-Executa seg–sex, 10h–18h, a cada 1 hora. Logs em `logs/agent_YYYY-MM-DD-HHh.log`.
-
-### Controle da task
-
-```powershell
-Start-ScheduledTask  -TaskName "InvestimentosAI-Agente"   # forçar agora
-Disable-ScheduledTask -TaskName "InvestimentosAI-Agente"  # pausar
-Unregister-ScheduledTask -TaskName "InvestimentosAI-Agente" -Confirm:$false  # remover
-```
-
-### Fluxo do agente por ciclo
-
-```
-get_macro_context → get_decision_log (últimas 3) → get_paper_portfolio
-    → run_investing_decision → save_paper_trade (sells + buys)
-    → save_decision (contexto completo)
-```
+Logs em `logs/agent_YYYY-MM-DD-HHh.log` (ignorados pelo git).
 
 ---
 
@@ -220,12 +241,13 @@ get_macro_context → get_decision_log (últimas 3) → get_paper_portfolio
 
 | Dado | Fonte | Uso |
 |------|--------|-----|
-| Cotações (~15min delay) | Yahoo Finance via `yfinance` | Preços, dividend yield, market cap |
-| Histórico OHLCV | Yahoo Finance via `yfinance` | Backtesting e indicadores |
+| Cotações B3 (primário) | [Brapi](https://brapi.dev) (`BRAPI_API_KEY`) | Preços em tempo real, dividend yield, market cap |
+| Cotações B3 (fallback) | Yahoo Finance via `yfinance` | Quando Brapi não tem o ticker |
+| Histórico OHLCV | Yahoo Finance via `yfinance` | Backtesting e indicadores técnicos (200+ dias) |
 | Macro BR | BCB API (gratuita, sem key) | Selic, IPCA, PTax |
 | Notícias | InfoMoney RSS, Investing.com BR RSS | Sentimento PT-BR |
 
-> **Nota:** Para backtesting em produção, substituir `yfinance` por B3 Market Data ou Economatica.
+> **Nota:** Day trade real exige dados tick-a-tick (latência < 1s). yfinance tem ~15min delay — adequado apenas para swing trade e análise fundamentalista.
 
 ## Cache
 
