@@ -34,7 +34,7 @@ Se mercado ABERTO:
 5. run_investing_decision com a watchlist e posições atuais do portfólio
 6. Para cada sinal de venda (stop, take-profit, fundamentos quebrados): save_paper_trade action=sell
 7. Para cada recomendação de compra aprovada pelos critérios do playbook: save_paper_trade action=buy
-8. save_decision com session_id no formato "YYYY-MM-DD-HHh" contendo: macro, portfolio_state, scores, sell_signals, buy_recommendations, reasoning, alertas
+8. save_decision com session_id "YYYY-MM-DD-10h" (use a data retornada pelo get_macro_context) contendo: macro, portfolio_state, scores, sell_signals, buy_recommendations, reasoning, alertas
 
 Se mercado FECHADO:
 5. score_tickers para a watchlist (preparação para próxima abertura)
@@ -112,9 +112,10 @@ Watchlist base: PETR4, VALE3, ITUB4, BBAS3, WEGE3, ABEV3, RENT3, GGBR4, CMIG4, B
 Execute nesta ordem:
 
 1. get_macro_context — Ibovespa futuro, USD/BRL, modo de mercado (tendência / lateralização / alta vol)
-2. get_sentiment para os 3 tickers com maior movimentação esperada — notícias overnight relevantes?
-3. get_decision_log (last_n=2) — posições abertas ontem, stops em andamento
-4. get_paper_portfolio — posições abertas com custo médio e stops vigentes
+2. get_trade_outcomes (since_date="2026-05-26") — P&L acumulado e perda do dia: se já atingiu 3–5% de perda diária, encerrar análise e registrar circuit breaker
+3. get_sentiment para os 3 tickers com maior movimentação esperada — notícias overnight relevantes?
+4. get_decision_log (last_n=2) — posições abertas ontem, stops em andamento
+5. get_paper_portfolio — posições abertas com custo médio e stops vigentes
 
 Para cada ticker da watchlist:
 5. technical_analysis — RSI, MACD, EMA 9/21/200, Bollinger, padrões de candle
@@ -123,8 +124,8 @@ Para cada ticker da watchlist:
 Com base na análise:
 7. Selecionar 5–8 tickers com setup válido para o dia (rompimento, pullback, reversão em suporte, VWAP bounce)
 8. Para cada setup: definir entrada, stop-loss e alvo (R/R mínimo 1:2)
-9. Verificar risco total: máx 1–2% do capital por operação, máx 3–5% por dia
-10. save_decision com session_id "YYYY-MM-DD-09h" contendo: cenário do dia, watchlist filtrada, setups com entrada/stop/alvo, capital em risco
+10. Verificar risco total: máx 1–2% do capital por operação, máx 3–5% por dia
+11. save_decision com session_id "YYYY-MM-DD-09h" contendo: cenário do dia, watchlist filtrada, setups com entrada/stop/alvo, capital em risco
 
 Regras invioláveis do playbook:
 - Stop-loss obrigatório em toda entrada — sem stop, sem entrada
@@ -152,20 +153,21 @@ Siga rigorosamente o playbook em docs/playbooks/trader.md.
 Execute nesta ordem:
 
 1. get_macro_context — variação atual do Ibovespa, mercado ainda aberto?
-2. get_paper_portfolio — posições abertas com custo médio
-3. get_decision_log (last_n=1) — plano do pré-mercado de hoje (setups, stops, alvos)
+2. get_trade_outcomes (since_date="2026-05-26") — P&L acumulado do dia: se perda diária ≥ 3%, acionar circuit breaker e não abrir novas posições
+3. get_paper_portfolio — posições abertas com custo médio
+4. get_decision_log (last_n=1) — plano do pré-mercado de hoje (setups, stops, alvos)
 
 Para cada posição aberta:
-4. get_stock_quotes — preço atual vs stop-loss e alvo definidos no pré-mercado
-5. technical_analysis — setup ainda válido? tese invalidada?
+5. get_stock_quotes — preço atual vs stop-loss e alvo definidos no pré-mercado
+6. technical_analysis — setup ainda válido? tese invalidada?
 
 Decisões:
-6. Stop atingido → save_paper_trade action=sell + razão "stop-loss atingido"
-7. Alvo atingido → save_paper_trade action=sell + razão "take-profit atingido"
-8. Tese invalidada (setup quebrado, volume fraco) → save_paper_trade action=sell + razão específica
-9. Trailing stop: se lucro > 1× risco, documentar novo stop em break-even na decisão
-10. Novos setups identificados no meio da sessão → avaliar entrada se critérios atendidos
-11. save_decision com session_id "YYYY-MM-DD-13h" contendo: status de cada posição, ações tomadas, circuit breaker status
+7. Stop atingido → save_paper_trade action=sell + razão "stop-loss atingido"
+8. Alvo atingido → save_paper_trade action=sell + razão "take-profit atingido"
+9. Tese invalidada (setup quebrado, volume fraco) → save_paper_trade action=sell + razão específica
+10. Trailing stop: se lucro > 1× risco, documentar novo stop em break-even na decisão
+11. Novos setups identificados no meio da sessão → avaliar entrada se critérios atendidos
+12. save_decision com session_id "YYYY-MM-DD-13h" contendo: status de cada posição, ações tomadas, circuit breaker status
 
 Circuit breaker:
 - 3 stops consecutivos hoje → não abrir novas posições, registrar alerta crítico
