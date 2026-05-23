@@ -3,6 +3,7 @@ import json
 import time
 from typing import Optional
 
+import httpx
 import yfinance as yf
 import redis.asyncio as aioredis
 
@@ -10,6 +11,8 @@ from app.config import get_settings
 
 _mem_cache: dict[str, tuple[dict, float]] = {}
 _redis_client: Optional[aioredis.Redis] = None
+
+_BRAPI_BASE = "https://brapi.dev/api"
 
 
 async def _get_redis() -> Optional[aioredis.Redis]:
@@ -26,17 +29,88 @@ async def _get_redis() -> Optional[aioredis.Redis]:
 
 
 def _cache_key(tickers: list[str], sort: Optional[str]) -> str:
-    return "yf:quotes:" + ",".join(sorted(tickers)) + (f":{sort}" if sort else "")
+    return "quotes:" + ",".join(sorted(tickers)) + (f":{sort}" if sort else "")
 
 
-def _b3_to_yf(ticker: str) -> str:
+def _b3_to_symbol(ticker: str) -> str:
     t = ticker.upper()
     if t.startswith("B3:"):
         t = t[3:]
-    return t if t.endswith(".SA") else t + ".SA"
+    return t
 
 
-def _fetch_quote(yf_ticker: str) -> dict | None:
+def _b3_to_yf(ticker: str) -> str:
+    sym = _b3_to_symbol(ticker)
+    return sym if sym.endswith(".SA") else sym + ".SA"
+
+
+# ---------------------------------------------------------------------------
+# Brapi (primary)
+# ---------------------------------------------------------------------------
+
+async def _fetch_brapi_batch(symbols: list[str]) -> dict[str, dict]:
+    """Batch quote fetch from Brapi. Returns {symbol: raw_item}."""
+    settings = get_settings()
+    if not settings.brapi_api_key:
+        return {}
+
+    tickers_str = ",".join(symbols)
+    url = f"{_BRAPI_BASE}/quote/{tickers_str}"
+    params = {
+        "token": settings.brapi_api_key,
+        "fundamental": "true",
+        "dividends": "true",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+        return {item["symbol"]: item for item in data.get("results", []) if item.get("symbol")}
+    except Exception:
+        return {}
+
+
+def _brapi_to_quote(item: dict) -> dict:
+    sym = item["symbol"]
+    price = item.get("regularMarketPrice") or 0.0
+    change_val = item.get("regularMarketChange") or 0.0
+    change_pct = item.get("regularMarketChangePercent") or 0.0
+
+    # Brapi returns dividendYield as percentage already (e.g. 8.72 = 8.72%)
+    raw_dy = item.get("dividendYield")
+    dy_pct = round(raw_dy, 2) if raw_dy else None
+    dy_cash = round(raw_dy / 100 * price, 4) if raw_dy and price else None
+
+    updated = item.get("regularMarketTime") or time.strftime("%Y-%m-%dT%H:%M:%S")
+
+    return {
+        "ticker": f"B3:{sym}",
+        "symbol": sym,
+        "name": item.get("longName") or item.get("shortName") or sym,
+        "full_name": item.get("longName"),
+        "kind": "stock",
+        "currency": item.get("currency", "BRL"),
+        "classification": None,
+        "quote": {
+            "value": round(price, 2),
+            "change_value": round(change_val, 4),
+            "change_percent": round(change_pct, 4),
+            "market_cap": item.get("marketCap"),
+            "updated_at": updated,
+        },
+        "dividends": {
+            "yield_12m_percent": dy_pct,
+            "yield_12m_cash": dy_cash,
+        } if dy_pct is not None else None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# yfinance (fallback)
+# ---------------------------------------------------------------------------
+
+def _fetch_yf_quote(yf_ticker: str) -> dict | None:
     try:
         t = yf.Ticker(yf_ticker)
         fi = t.fast_info
@@ -49,7 +123,6 @@ def _fetch_quote(yf_ticker: str) -> dict | None:
         change_pct = round(change_value / prev_close * 100, 4) if prev_close else 0.0
 
         raw_dy = info.get("dividendYield") or info.get("trailingAnnualDividendYield")
-        # yfinance returns .SA dividend yield already as percentage (e.g. 8.72 = 8.72%)
         dy_pct = round(raw_dy, 2) if raw_dy else None
         dy_cash = round(raw_dy / 100 * last_price, 4) if raw_dy and last_price else None
 
@@ -76,6 +149,10 @@ def _fetch_quote(yf_ticker: str) -> dict | None:
     except Exception:
         return None
 
+
+# ---------------------------------------------------------------------------
+# Sort + main entry
+# ---------------------------------------------------------------------------
 
 _SORT_KEY = {
     "value": lambda x: (x.get("quote") or {}).get("value") or 0.0,
@@ -112,12 +189,35 @@ async def get_quotes(tickers: list[str], sort: Optional[str] = None) -> dict:
         if time.time() - ts < ttl:
             return data
 
-    yf_tickers = [_b3_to_yf(t) for t in tickers]
-    raw = await asyncio.gather(*[asyncio.to_thread(_fetch_quote, t) for t in yf_tickers])
-    results = _apply_sort([r for r in raw if r is not None], sort)
+    symbols = [_b3_to_symbol(t) for t in tickers]
+
+    # 1. Try Brapi batch
+    brapi_map = await _fetch_brapi_batch(symbols)
+
+    results = []
+    yf_fallback = []
+
+    for sym in symbols:
+        if sym in brapi_map:
+            results.append(_brapi_to_quote(brapi_map[sym]))
+        else:
+            yf_fallback.append(sym)
+
+    # 2. yfinance fallback for any missed tickers
+    if yf_fallback:
+        yf_tickers = [s + ".SA" for s in yf_fallback]
+        raw = await asyncio.gather(*[asyncio.to_thread(_fetch_yf_quote, t) for t in yf_tickers])
+        results.extend([r for r in raw if r is not None])
+
+    results = _apply_sort(results, sort)
 
     data = {
-        "metadata": {"cached": False, "response_time_ms": 0.0, "language": "pt-br"},
+        "metadata": {
+            "cached": False,
+            "response_time_ms": 0.0,
+            "language": "pt-br",
+            "source": "brapi" if brapi_map else "yfinance",
+        },
         "results": results,
     }
 

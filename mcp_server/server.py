@@ -56,7 +56,7 @@ mcp = FastMCP(
 
 
 # ---------------------------------------------------------------------------
-# Tool 1 — Real-time quotes (yfinance / Yahoo Finance)
+# Tool 1 — Real-time quotes (Brapi primary / yfinance fallback)
 # ---------------------------------------------------------------------------
 @mcp.tool()
 async def get_stock_quotes(
@@ -64,7 +64,7 @@ async def get_stock_quotes(
     sort: Optional[str] = None,
 ) -> dict:
     """
-    Fetch current B3 stock quotes via Yahoo Finance (yfinance, ~15min delay).
+    Fetch current B3 stock quotes from Brapi (primary) or yfinance fallback (~15min delay).
 
     Args:
         tickers: B3 ticker symbols, e.g. ["PETR4", "VALE3", "ITUB4"]
