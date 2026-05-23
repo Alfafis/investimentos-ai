@@ -56,8 +56,11 @@ Criterios do playbook sao lei. Justifique cada decisao de forma auditavel.
 Write-Log "[$SessionId] Iniciando sessao do agente"
 
 try {
-    $result = claude -p $UserPrompt --system-prompt $SystemPrompt --max-turns 30 --dangerously-skip-permissions 2>&1 | Out-String
-    Write-Log $result
+    claude -p $UserPrompt --system-prompt $SystemPrompt --max-turns 30 --dangerously-skip-permissions 2>&1 | ForEach-Object {
+        $line = "$_"
+        [System.IO.File]::AppendAllText($LogFile, "$line`n", $utf8NoBom)
+        Write-Host $line
+    }
     Write-Log "[$SessionId] Sessao concluida com sucesso"
 } catch {
     Write-Log "[$SessionId] ERRO: $_"
