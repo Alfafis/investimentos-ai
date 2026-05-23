@@ -35,3 +35,7 @@ htmlcov/
 
 # Jupyter
 .ipynb_checkpoints/
+
+# Experiment logs and DB (runtime artifacts)
+logs/
+*.db
