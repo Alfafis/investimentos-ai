@@ -36,6 +36,7 @@ from app.experiment.store import (
     save_paper_trade as _save_paper_trade,
     get_paper_portfolio as _get_paper_portfolio,
     get_trade_outcomes as _get_trade_outcomes,
+    export_experiment_csv as _export_experiment_csv,
 )
 
 import os as _os
@@ -661,6 +662,30 @@ def get_trade_outcomes(
         completed_trades, realized_pnl_brl, open_positions, period_from
     """
     return _get_trade_outcomes(since_date)
+
+
+# ---------------------------------------------------------------------------
+# Tool 22 — Export experiment data to CSV
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def export_experiment_csv() -> dict:
+    """
+    Export all experiment data (decisions + paper trades) to CSV.
+
+    Writes two files to /data/ inside the container:
+      - /data/trades.csv   — all paper trades (flat, ready for spreadsheet)
+      - /data/decisions.csv — all agent decisions (JSON blob per row)
+
+    Also returns the CSV content inline so you can read it directly.
+
+    To copy files out of Docker:
+      docker cp investimentos-ai-mcp-1:/data/trades.csv ./trades.csv
+      docker cp investimentos-ai-mcp-1:/data/decisions.csv ./decisions.csv
+
+    Returns:
+        trades_csv, decisions_csv (strings), file paths, row counts.
+    """
+    return _export_experiment_csv()
 
 
 if __name__ == "__main__":

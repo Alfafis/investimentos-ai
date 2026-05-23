@@ -5,6 +5,8 @@ Tables:
   decisions   — full agent decision context per iteration
   paper_trades — virtual buy/sell actions (paper trading)
 """
+import csv
+import io
 import json
 import os
 import sqlite3
@@ -243,4 +245,67 @@ def get_trade_outcomes(since_date: Optional[str] = None) -> dict:
         "realized_pnl_brl": round(realized_pnl, 2),
         "open_positions": open_positions,
         "period_from": since_date or "all-time",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+def export_experiment_csv() -> dict:
+    """
+    Export all experiment data to CSV strings + write files to /data/.
+
+    Returns dict with:
+      - trades_csv: paper_trades as CSV string
+      - decisions_csv: decisions as CSV string (decision column as JSON)
+      - trades_path: file path written on disk
+      - decisions_path: file path written on disk
+    """
+    init_db()
+    with _db() as conn:
+        trades = conn.execute(
+            "SELECT id, timestamp, action, ticker, price, quantity, "
+            "ROUND(price*quantity,2) as trade_value_brl, reason, session_id "
+            "FROM paper_trades ORDER BY timestamp ASC"
+        ).fetchall()
+        decisions = conn.execute(
+            "SELECT id, session_id, timestamp, decision FROM decisions ORDER BY timestamp ASC"
+        ).fetchall()
+
+    # --- trades CSV ---
+    trades_buf = io.StringIO()
+    tw = csv.writer(trades_buf)
+    tw.writerow(["id", "timestamp", "action", "ticker", "price", "quantity",
+                 "trade_value_brl", "reason", "session_id"])
+    for r in trades:
+        tw.writerow([r["id"], r["timestamp"], r["action"], r["ticker"],
+                     r["price"], r["quantity"], r["trade_value_brl"],
+                     r["reason"] or "", r["session_id"] or ""])
+    trades_csv = trades_buf.getvalue()
+
+    # --- decisions CSV ---
+    decisions_buf = io.StringIO()
+    dw = csv.writer(decisions_buf)
+    dw.writerow(["id", "session_id", "timestamp", "decision_json"])
+    for r in decisions:
+        dw.writerow([r["id"], r["session_id"], r["timestamp"], r["decision"]])
+    decisions_csv = decisions_buf.getvalue()
+
+    # Write to /data/ so user can docker cp out
+    db_dir = os.path.dirname(_DB_PATH)
+    trades_path = os.path.join(db_dir, "trades.csv")
+    decisions_path = os.path.join(db_dir, "decisions.csv")
+    with open(trades_path, "w", encoding="utf-8", newline="") as f:
+        f.write(trades_csv)
+    with open(decisions_path, "w", encoding="utf-8", newline="") as f:
+        f.write(decisions_csv)
+
+    return {
+        "trades_csv": trades_csv,
+        "decisions_csv": decisions_csv,
+        "trades_path": trades_path,
+        "decisions_path": decisions_path,
+        "trades_count": len(trades),
+        "decisions_count": len(decisions),
     }
