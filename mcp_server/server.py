@@ -30,6 +30,13 @@ from app.skills.shared.sentiment import analyze_sentiment
 from app.skills.stocks.technical import detect_patterns_async
 from app.skills.stocks.fundamental import parse_quarterly_earnings_async, peer_comparison_async, dcf_valuation
 from app.models import PortfolioInput, PortfolioPosition
+from app.experiment.store import (
+    save_decision as _save_decision,
+    get_decision_log as _get_decision_log,
+    save_paper_trade as _save_paper_trade,
+    get_paper_portfolio as _get_paper_portfolio,
+    get_trade_outcomes as _get_trade_outcomes,
+)
 
 import os as _os
 _MCP_HOST = _os.environ.get("MCP_HOST", "127.0.0.1")
@@ -521,6 +528,139 @@ async def score_tickers(tickers: list[str]) -> dict:
     symbols = [t.strip().upper() for t in tickers]
     results = await score_watchlist(symbols)
     return {"results": [r.model_dump() for r in results], "count": len(results)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 17 — Save agent decision (experiment persistence)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def save_decision(
+    session_id: str,
+    decision: dict,
+) -> dict:
+    """
+    Persist a full agent decision context to SQLite for the 5-day experiment.
+
+    Call this at the end of every decision cycle so the log is complete.
+
+    Args:
+        session_id: Unique identifier for this agent session (e.g. "2026-05-26-10h")
+        decision: Full decision dict — macro context, scores, sell signals,
+                  buy recommendations, reasoning. Any JSON-serialisable structure.
+
+    Returns:
+        {"saved": true, "id": <row_id>}
+    """
+    row_id = _save_decision(session_id, decision)
+    return {"saved": True, "id": row_id}
+
+
+# ---------------------------------------------------------------------------
+# Tool 18 — Get decision log (experiment read-back)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def get_decision_log(
+    date_filter: Optional[str] = None,
+    last_n: Optional[int] = None,
+) -> dict:
+    """
+    Retrieve saved agent decisions from the experiment log.
+
+    Filters (use one at a time):
+    - date_filter: ISO date string "YYYY-MM-DD" — returns all decisions for that day
+    - last_n: integer — returns the N most recent decisions
+
+    If neither is given, returns the entire log.
+
+    Args:
+        date_filter: e.g. "2026-05-26"
+        last_n: e.g. 5
+
+    Returns:
+        {"decisions": [...], "count": N}
+    """
+    rows = _get_decision_log(date_filter, last_n)
+    return {"decisions": rows, "count": len(rows)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 19 — Save paper trade (virtual execution)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def save_paper_trade(
+    action: str,
+    ticker: str,
+    price: float,
+    quantity: float,
+    reason: Optional[str] = None,
+    session_id: Optional[str] = None,
+) -> dict:
+    """
+    Record a virtual buy or sell action for paper trading during the experiment.
+
+    No real money moves. This is the execution log for tracking decisions.
+
+    Args:
+        action: "buy" or "sell"
+        ticker: B3 symbol, e.g. "PETR4"
+        price: Execution price in BRL (use current market price from get_stock_quotes)
+        quantity: Number of shares (can be fractional for BRL-based sizing)
+        reason: Short human-readable rationale, e.g. "RSI oversold + above EMA200"
+        session_id: Optional session tag to group trades with decisions
+
+    Returns:
+        {"saved": true, "id": <row_id>, "trade_value_brl": <price * quantity>}
+    """
+    if action.lower() not in ("buy", "sell"):
+        return {"error": f"action must be 'buy' or 'sell', got '{action}'"}
+    row_id = _save_paper_trade(action, ticker, price, quantity, reason, session_id)
+    return {
+        "saved": True,
+        "id": row_id,
+        "trade_value_brl": round(price * quantity, 2),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Tool 20 — Get paper portfolio (open positions)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def get_paper_portfolio() -> dict:
+    """
+    Return current open paper positions (buys not yet sold).
+
+    Uses FIFO matching to compute open quantity and average buy price per ticker.
+    Combine with get_stock_quotes to compute live unrealized P&L.
+
+    Returns:
+        {"positions": [...], "count": N}
+        Each position: ticker, open_quantity, avg_buy_price, total_cost_brl, first_buy_at
+    """
+    positions = _get_paper_portfolio()
+    return {"positions": positions, "count": len(positions)}
+
+
+# ---------------------------------------------------------------------------
+# Tool 21 — Get trade outcomes (realized + open P&L)
+# ---------------------------------------------------------------------------
+@mcp.tool()
+def get_trade_outcomes(
+    since_date: Optional[str] = None,
+) -> dict:
+    """
+    Compute P&L outcomes for all paper trades since a given date.
+
+    For completed round-trips (buy + sell): realized P&L in BRL and %.
+    For open positions: returns cost basis (combine with get_stock_quotes for live P&L).
+
+    Args:
+        since_date: ISO date "YYYY-MM-DD" — filter trades from this date onward.
+                    Omit to get all-time results.
+
+    Returns:
+        completed_trades, realized_pnl_brl, open_positions, period_from
+    """
+    return _get_trade_outcomes(since_date)
 
 
 if __name__ == "__main__":

@@ -41,6 +41,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       MCP_HOST: "0.0.0.0"
       MCP_PORT: "8001"
+      EXPERIMENT_DB_PATH: /data/experiment.db
     depends_on:
       redis:
         condition: service_healthy
@@ -49,6 +50,8 @@ services:
       - "8001:8001"
     volumes:
       - .:/app
+      - experiment_data:/data
 
 volumes:
   redis_data:
+  experiment_data:
