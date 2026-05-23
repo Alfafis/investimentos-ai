@@ -206,9 +206,66 @@ class FundamentalMetrics(BaseModel):
     dcf_fair_value: Optional[float] = None
     current_price: Optional[float] = None
     upside_pct: Optional[float] = None
+    avg_volume_10d: Optional[int] = None
+    market_cap_brl: Optional[float] = None
 
 
 class PeerComparison(BaseModel):
     ticker: str
     peers: list[str]
     metrics: dict[str, Any]  # {ticker: {metric: value}}
+
+
+# --- Scorer ---
+
+class ScoreBreakdown(BaseModel):
+    technical: float
+    fundamental: float
+    sentiment: float
+    macro: float
+    combined: float
+
+
+class ScoreResult(BaseModel):
+    ticker: str
+    timestamp: str
+    score: ScoreBreakdown
+    passes_quality_filters: bool
+    quality_filter_failures: list[str]
+    recommendation: str  # "buy" | "hold" | "skip"
+    reasons: list[str]
+    technical_signal: Optional[Any] = None
+    fundamental_metrics: Optional[Any] = None
+
+
+# --- Sell Evaluator ---
+
+class SellSignal(BaseModel):
+    ticker: str
+    action: str       # "sell" | "reduce" | "hold"
+    urgency: str      # "immediate" | "planned" | "none"
+    suggested_sell_pct: float  # % da posição a vender (0-100)
+    reasons: list[str]
+
+
+# --- Investing Pipeline ---
+
+class BuyRecommendation(BaseModel):
+    ticker: str
+    score: float
+    score_breakdown: ScoreBreakdown
+    recommended_capital_pct: float  # % do capital total a alocar (Kelly-capped)
+    recommended_brl: float
+    reasons: list[str]
+
+
+class InvestingDecision(BaseModel):
+    timestamp: str
+    market_open: bool
+    conservative_mode: bool  # ibovespa > ±3%
+    macro: MacroContext
+    portfolio: Optional[PortfolioSummary] = None
+    sell_signals: list[SellSignal]
+    buy_recommendations: list[BuyRecommendation]
+    alerts: list[str]
+    circuit_breaker_triggered: bool

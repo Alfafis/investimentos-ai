@@ -21,6 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.hgbrasil.client import get_quotes
 from app.simulation.engine import run_simulation
 from app.simulation.strategies import STRATEGIES
+from app.agent.investing_pipeline import run_investing_pipeline
+from app.skills.shared.scorer import score_watchlist
 from app.skills.shared.macro import load_macro_context
 from app.skills.shared.risk import calculate_risk_async, check_circuit_breaker, correlation_matrix
 from app.skills.shared.portfolio import track_portfolio
@@ -451,6 +453,74 @@ async def compare_peers(
     """
     result = await peer_comparison_async(ticker, peers)
     return result.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 15 — Pipeline completo de investimentos
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def run_investing_decision(
+    watchlist: list[str],
+    positions: list[dict] | None = None,
+    cash: float = 0.0,
+) -> dict:
+    """
+    Executa o pipeline completo do Playbook de Investimentos (longo prazo).
+
+    Passos internos:
+    1. Pré-análise: macro (Selic/IPCA/USD/Ibovespa), mercado aberto, modo conservador
+    2. Avaliação da carteira: P&L, stops, concentração, sinais de venda
+    3. Screening: score combinado técnica+fundamental+sentimento+macro para watchlist
+    4. Gestão de risco: Kelly position sizing, circuit breaker, reserva de caixa
+    5. Decisão: recomendações de venda (com urgência) e compra (com tamanho BRL)
+
+    Args:
+        watchlist: tickers a avaliar para compra, ex: ["PETR4", "VALE3", "ITUB4"]
+        positions: posições atuais, ex: [{"ticker": "BBAS3", "quantity": 100, "avg_price": 28.50}]
+        cash: saldo em caixa em BRL
+
+    Returns:
+        InvestingDecision com sell_signals, buy_recommendations e alertas
+    """
+    from app.models import PortfolioInput, PortfolioPosition
+
+    portfolio = None
+    if positions:
+        parsed = [
+            PortfolioPosition(
+                ticker=p["ticker"].upper(),
+                quantity=p["quantity"],
+                avg_price=p["avg_price"],
+            )
+            for p in positions
+        ]
+        portfolio = PortfolioInput(positions=parsed, cash=cash)
+
+    tickers = [t.strip().upper() for t in watchlist]
+    decision = await run_investing_pipeline(tickers, portfolio)
+    return decision.model_dump()
+
+
+# ---------------------------------------------------------------------------
+# Tool 16 — Score combinado por ticker
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def score_tickers(tickers: list[str]) -> dict:
+    """
+    Score combinado de compra para múltiplos tickers B3.
+
+    Pondera: técnica 40% + fundamentalista 40% + sentimento 10% + macro 10%.
+    Score >= 0.6 → recomendação "buy". Filtros de qualidade são gates hard.
+
+    Args:
+        tickers: lista de símbolos B3, ex: ["PETR4", "VALE3", "ITUB4"]
+
+    Returns:
+        Lista ordenada por score desc com breakdown e recomendação por ticker
+    """
+    symbols = [t.strip().upper() for t in tickers]
+    results = await score_watchlist(symbols)
+    return {"results": [r.model_dump() for r in results], "count": len(results)}
 
 
 if __name__ == "__main__":

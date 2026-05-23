@@ -53,6 +53,10 @@ def parse_quarterly_earnings(ticker: str) -> FundamentalMetrics:
 
     current_price = _safe_float(info.get("currentPrice") or info.get("regularMarketPrice"))
 
+    avg_volume = info.get("averageDailyVolume10Day") or info.get("averageVolume")
+    avg_volume_10d = int(avg_volume) if avg_volume else None
+    market_cap = _safe_float(info.get("marketCap"))
+
     # Simplified DCF: P = EPS * (1 + g) / (WACC - g)
     # Uses trailing EPS, assumes 5% perpetual growth, 12% WACC (Brazil risk premium)
     dcf_fair_value = None
@@ -79,6 +83,8 @@ def parse_quarterly_earnings(ticker: str) -> FundamentalMetrics:
         dcf_fair_value=dcf_fair_value,
         current_price=current_price,
         upside_pct=upside_pct,
+        avg_volume_10d=avg_volume_10d,
+        market_cap_brl=market_cap,
     )
 
 
