@@ -7,7 +7,7 @@ Phase 2: persist to PostgreSQL.
 from typing import Optional
 
 import asyncio
-from app.hgbrasil.client import get_quotes
+from app.quotes.client import get_quotes
 from app.models import PortfolioInput, PortfolioSummary, PositionDetail
 
 

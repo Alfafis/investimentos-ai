@@ -2,7 +2,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.hgbrasil.client import get_quotes as _get_quotes
+from app.quotes.client import get_quotes as _get_quotes
 from app.models import Classification, Dividends, Quote, QuotesResponse, StockResult
 
 router = APIRouter(prefix="/quotes", tags=["quotes"])

@@ -18,7 +18,7 @@ from mcp.server.fastmcp import FastMCP
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.hgbrasil.client import get_quotes
+from app.quotes.client import get_quotes
 from app.simulation.engine import run_simulation
 from app.simulation.strategies import STRATEGIES
 from app.agent.investing_pipeline import run_investing_pipeline
