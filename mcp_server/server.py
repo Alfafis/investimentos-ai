@@ -642,26 +642,84 @@ def get_paper_portfolio() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Tool 21 — Get trade outcomes (realized + open P&L)
+# Tool 21 — Get trade outcomes (full equity snapshot)
 # ---------------------------------------------------------------------------
 @mcp.tool()
-def get_trade_outcomes(
+async def get_trade_outcomes(
     since_date: Optional[str] = None,
+    initial_capital: float = 5000.0,
 ) -> dict:
     """
-    Compute P&L outcomes for all paper trades since a given date.
+    Full equity snapshot: realized P&L, cash balance, unrealized P&L, and total portfolio value.
 
-    For completed round-trips (buy + sell): realized P&L in BRL and %.
-    For open positions: returns cost basis (combine with get_stock_quotes for live P&L).
+    Fetches live quotes for all open positions to compute unrealized P&L in real time.
 
     Args:
-        since_date: ISO date "YYYY-MM-DD" — filter trades from this date onward.
-                    Omit to get all-time results.
+        since_date: ISO date "YYYY-MM-DD" — filter completed trades from this date onward.
+                    Omit to get all-time results. Use "2026-05-26" for experiment start.
+        initial_capital: Starting capital in BRL (default 5000.0).
 
     Returns:
-        completed_trades, realized_pnl_brl, open_positions, period_from
+        - completed_trades: realized round-trips with P&L per trade
+        - realized_pnl_brl / realized_pnl_pct: total closed P&L
+        - cash_balance_brl: remaining cash (initial - buys + sells)
+        - open_positions: each with unrealized_pnl_brl, unrealized_pnl_pct, current_price
+        - unrealized_pnl_brl: total unrealized across all open positions
+        - total_equity_brl: cash + current market value of open positions
+        - total_return_pct: (total_equity - initial_capital) / initial_capital * 100
     """
-    return _get_trade_outcomes(since_date)
+    base = _get_trade_outcomes(since_date, initial_capital)
+    open_pos = base["open_positions"]
+
+    # Fetch live quotes for all open positions to compute unrealized P&L
+    if open_pos:
+        tickers_b3 = [f"B3:{p['ticker']}" for p in open_pos]
+        try:
+            quotes_data = await get_quotes(tickers_b3)
+            price_map = {
+                q["symbol"]: q["quote"]["value"]
+                for q in quotes_data.get("results", [])
+                if q.get("quote") and q.get("symbol")
+            }
+        except Exception:
+            price_map = {}
+
+        enriched = []
+        total_market_value = 0.0
+        for p in open_pos:
+            current_price = price_map.get(p["ticker"])
+            if current_price:
+                unreal_brl = round((current_price - p["avg_buy_price"]) * p["open_quantity"], 2)
+                unreal_pct = round((current_price - p["avg_buy_price"]) / p["avg_buy_price"] * 100, 2)
+                market_value = round(current_price * p["open_quantity"], 2)
+            else:
+                unreal_brl = None
+                unreal_pct = None
+                market_value = p["total_cost_brl"]
+            total_market_value += market_value
+            enriched.append({
+                **p,
+                "current_price": current_price,
+                "market_value_brl": market_value,
+                "unrealized_pnl_brl": unreal_brl,
+                "unrealized_pnl_pct": unreal_pct,
+            })
+    else:
+        enriched = []
+        total_market_value = 0.0
+
+    unrealized_pnl = sum(p["unrealized_pnl_brl"] for p in enriched if p["unrealized_pnl_brl"] is not None)
+    total_equity = base["cash_balance_brl"] + total_market_value
+    total_return_pct = round((total_equity - initial_capital) / initial_capital * 100, 2) if initial_capital else 0.0
+
+    return {
+        **base,
+        "open_positions": enriched,
+        "unrealized_pnl_brl": round(unrealized_pnl, 2),
+        "total_market_value_brl": round(total_market_value, 2),
+        "total_equity_brl": round(total_equity, 2),
+        "total_return_pct": total_return_pct,
+    }
 
 
 # ---------------------------------------------------------------------------

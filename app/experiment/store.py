@@ -185,13 +185,17 @@ def get_paper_portfolio() -> list[dict]:
     return positions
 
 
-def get_trade_outcomes(since_date: Optional[str] = None) -> dict:
+def get_trade_outcomes(
+    since_date: Optional[str] = None,
+    initial_capital: float = 5000.0,
+) -> dict:
     """
     P&L summary of all trades since since_date (YYYY-MM-DD).
-    Returns completed trades (buy+sell pairs) and open positions.
+    Returns completed trades, cash balance, open positions, and capital summary.
     """
     init_db()
     with _db() as conn:
+        # Period rows for realized P&L reporting
         if since_date:
             rows = conn.execute(
                 "SELECT * FROM paper_trades WHERE date(timestamp) >= ? ORDER BY timestamp ASC",
@@ -202,10 +206,22 @@ def get_trade_outcomes(since_date: Optional[str] = None) -> dict:
                 "SELECT * FROM paper_trades ORDER BY timestamp ASC"
             ).fetchall()
 
+        # All-time totals for accurate cash balance (unaffected by since_date filter)
+        totals = conn.execute(
+            """SELECT
+                COALESCE(SUM(CASE WHEN action='buy'  THEN price*quantity ELSE 0 END), 0) AS total_buy,
+                COALESCE(SUM(CASE WHEN action='sell' THEN price*quantity ELSE 0 END), 0) AS total_sell
+               FROM paper_trades"""
+        ).fetchone()
+
+    total_buy_value = float(totals["total_buy"])
+    total_sell_value = float(totals["total_sell"])
+    cash_balance = initial_capital - total_buy_value + total_sell_value
+
     completed: list[dict] = []
     open_positions = get_paper_portfolio()
 
-    # Group by ticker for realized P&L (FIFO)
+    # FIFO realized P&L for the filtered period
     by_ticker: dict[str, list] = {}
     for r in rows:
         by_ticker.setdefault(r["ticker"], []).append(r)
@@ -239,11 +255,18 @@ def get_trade_outcomes(since_date: Optional[str] = None) -> dict:
                         buy_queue.pop(0)
 
     realized_pnl = sum(c["pnl_brl"] for c in completed)
+    cost_of_open = sum(p["total_cost_brl"] for p in open_positions)
 
     return {
         "completed_trades": completed,
         "realized_pnl_brl": round(realized_pnl, 2),
+        "realized_pnl_pct": round(realized_pnl / initial_capital * 100, 2) if initial_capital else 0.0,
         "open_positions": open_positions,
+        "open_positions_cost_brl": round(cost_of_open, 2),
+        "cash_balance_brl": round(cash_balance, 2),
+        "total_invested_brl": round(total_buy_value, 2),
+        "total_proceeds_brl": round(total_sell_value, 2),
+        "initial_capital_brl": initial_capital,
         "period_from": since_date or "all-time",
     }
 
