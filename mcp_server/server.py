@@ -27,6 +27,7 @@ from app.skills.shared.macro import load_macro_context
 from app.skills.shared.risk import calculate_risk_async, check_circuit_breaker, correlation_matrix
 from app.skills.shared.portfolio import track_portfolio
 from app.skills.shared.sentiment import analyze_sentiment
+from app.skills.shared.news_radar import scan_market_news as _scan_market_news
 from app.skills.stocks.technical import detect_patterns_async
 from app.skills.stocks.fundamental import parse_quarterly_earnings_async, peer_comparison_async, dcf_valuation
 from app.models import PortfolioInput, PortfolioPosition
@@ -744,6 +745,39 @@ def export_experiment_csv() -> dict:
         trades_csv, decisions_csv (strings), file paths, row counts.
     """
     return _export_experiment_csv()
+
+
+# ---------------------------------------------------------------------------
+# Tool 23 — Market news radar
+# ---------------------------------------------------------------------------
+@mcp.tool()
+async def scan_market_news(max_results: int = 15) -> dict:
+    """
+    Scan RSS feeds (InfoMoney, Investing.com BR) and return B3 tickers ranked by news volume.
+
+    Uses a curated PT-BR alias dictionary to avoid false positives
+    (e.g. "vale" as a Portuguese word is excluded — requires "Vale S.A." or "VALE3").
+
+    Returns tickers sorted by relevance_score = mentions × (0.5 + |sentiment|).
+    Flags whether each ticker is in the base watchlist (in_watchlist).
+
+    Use at pre-market (08h) to identify:
+      - Watchlist tickers with significant overnight news (positive or negative)
+      - Out-of-watchlist tickers worth adding to today's analysis
+
+    Args:
+        max_results: Max tickers to return (default 15).
+
+    Returns:
+        {"tickers": [...], "total_articles_scanned": N, "count": N}
+        Each ticker: ticker, mentions, sentiment_score, sentiment_label,
+                     relevance_score, headlines (up to 3), in_watchlist
+    """
+    tickers = await _scan_market_news(max_results)
+    return {
+        "tickers": tickers,
+        "count": len(tickers),
+    }
 
 
 if __name__ == "__main__":

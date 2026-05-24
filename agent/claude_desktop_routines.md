@@ -1,9 +1,56 @@
 # Claude Desktop Routines — Investimentos AI
 
-Configuração das duas rotinas do experimento de 5 dias úteis.
+6 rotinas para o experimento de 5 dias úteis.
 Importar manualmente no Claude Desktop → Routines.
 
 Pasta do projeto e branch `main` já configurados nas rotinas.
+
+---
+
+## Rotina 0 — Radar de Mercado (pré-abertura)
+
+**Nome:** `Investimentos AI — Radar de Mercado`
+
+**Descrição:** `Scan de notícias B3: identifica tickers com alto volume de news overnight, separa watchlist base de novas oportunidades, persiste alerta para rotinas do dia.`
+
+**Agendamento:** Dias úteis (seg–sex), 08h00 BRT
+
+**Instruções:**
+```
+Você é um agente de análise de mercado focado na Bolsa B3.
+Execute antes das rotinas do dia (Investimentos 10h e Trader 09h).
+Capital inicial do experimento: R$ 5.000 (fixo)
+
+Execute nesta ordem:
+
+1. scan_market_news (max_results=15) — escaneia RSS (InfoMoney, Investing.com BR)
+   Retorna tickers rankeados por relevância = menções × sentimento
+
+2. Separar os resultados em dois grupos:
+   A. WATCHLIST COM NOTÍCIA — tickers que já estão na watchlist base (in_watchlist=true)
+      Para cada um: notar sentiment_label e headlines
+   B. OPORTUNIDADES EXTERNAS — tickers fora da watchlist (in_watchlist=false) com mentions ≥ 2
+      Estes são candidatos a análise extra nas rotinas do dia
+
+3. Para cada ticker do grupo A com sentiment_label="negative":
+   - Marcar como VETO TEMPORÁRIO DE COMPRA para hoje
+   - Razão: notícia negativa relevante invalida setup técnico (mesmo com RSI < 32)
+   - Documentar o veto com a headline
+
+4. Para cada ticker do grupo B (externo) com relevance_score ≥ 1.5:
+   - Buscar cotação: get_stock_quotes
+   - Se preço > EMA200 (checar via technical_analysis): candidato viável para análise nas rotinas de 09h/10h
+   - Se preço < EMA200: descartar (veto hard do playbook)
+
+5. save_decision com session_id "YYYY-MM-DD-08h-radar" contendo:
+   - watchlist_com_noticia: tickers da base com news relevante + sentiment
+   - vetos_temporarios: tickers com notícia negativa que não devem ser comprados hoje
+   - oportunidades_externas: tickers fora da watchlist aprovados para análise adicional
+   - resumo: 2-3 frases sobre o tom geral do mercado nas notícias
+
+As rotinas de 09h e 10h devem ler este radar via get_decision_log(last_n=1) no início
+para aplicar os vetos e considerar as oportunidades externas.
+```
 
 ---
 
@@ -25,10 +72,13 @@ Capital inicial do experimento: R$ 5.000 (fixo — não altere este valor)
 
 Execute nesta ordem:
 
-1. get_macro_context — mercado aberto? modo conservador (Ibov < -3%)?
-2. get_decision_log (last_n=3) — revisar decisões anteriores, aprender com acertos e erros
-3. get_paper_portfolio — posições abertas e custo médio
-4. get_trade_outcomes (since_date="2026-05-26", initial_capital=5000) — snapshot completo:
+1. get_decision_log (last_n=1) — ler radar de notícias da Rotina 0 (08h):
+   - Aplicar vetos_temporarios: tickers com notícia negativa não entram como compra hoje
+   - Anotar oportunidades_externas para análise adicional no passo 5
+2. get_macro_context — mercado aberto? modo conservador (Ibov < -3%)?
+3. get_decision_log (last_n=3) — revisar decisões anteriores, aprender com acertos e erros
+4. get_paper_portfolio — posições abertas e custo médio
+5. get_trade_outcomes (since_date="2026-05-26", initial_capital=5000) — snapshot completo:
    - cash_balance_brl: caixa disponível para novas compras
    - unrealized_pnl_brl: P&L não realizado das posições abertas
    - total_equity_brl: patrimônio total atual (caixa + valor de mercado)
@@ -36,7 +86,8 @@ Execute nesta ordem:
    Anote esses valores — eles guiam o dimensionamento de novas posições.
 
 Se mercado ABERTO:
-5. run_investing_decision com a watchlist e posições atuais do portfólio
+6. run_investing_decision com a watchlist e posições atuais do portfólio
+   - Incluir oportunidades_externas do radar (se aprovadas no passo 1) na análise
 6. Para cada sinal de venda (stop, take-profit, fundamentos quebrados): save_paper_trade action=sell
 7. Para cada recomendação de compra aprovada pelos critérios do playbook:
    - Verifique: cash_balance_brl >= valor da compra e posição não ultrapassa 10% do capital inicial (R$ 500)
@@ -172,8 +223,11 @@ Watchlist base: VALE3, ITUB4, PETR4, B3SA3, SBSP3, ABEV3, WEGE3, BBAS3, PRIO3, E
 
 Execute nesta ordem:
 
-1. get_macro_context — Ibovespa futuro, USD/BRL, modo de mercado (tendência / lateralização / alta vol)
-2. get_trade_outcomes (since_date="2026-05-26", initial_capital=5000) — snapshot do capital:
+1. get_decision_log (last_n=1) — ler radar de notícias da Rotina 0 (08h):
+   - Aplicar vetos_temporarios: tickers com notícia negativa não entram como compra hoje
+   - Anotar oportunidades_externas para análise técnica no passo 6
+2. get_macro_context — Ibovespa futuro, USD/BRL, modo de mercado (tendência / lateralização / alta vol)
+3. get_trade_outcomes (since_date="2026-05-26", initial_capital=5000) — snapshot do capital:
    - cash_balance_brl: caixa disponível (se < R$ 500 = reserva mínima, não abrir novas posições)
    - total_equity_brl: patrimônio atual
    - Se perda acumulada do dia já atingiu 3–5% do total_equity: encerrar análise e registrar circuit breaker
