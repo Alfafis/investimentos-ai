@@ -48,19 +48,27 @@ async def _bcb_latest(series_id: int) -> float | None:
 
 
 async def _ptax_usd() -> float | None:
-    today = date.today().strftime("%m-%d-%Y")
-    url = (
-        f"{_PTAX}/CotacaoDolarDia(dataCotacao=@d)"
-        f"?@d='{today}'&$top=1&$format=json&$select=cotacaoVenda"
-    )
-    try:
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            r = await client.get(url)
-            r.raise_for_status()
-            items = r.json().get("value", [])
-            return float(items[0]["cotacaoVenda"]) if items else None
-    except Exception:
-        return None
+    # Use BRT date (not UTC) — BCB publishes by Brazil business day.
+    # Try up to 5 previous days to handle weekends and holidays.
+    from datetime import timedelta
+    brt_today = datetime.now(_BRT).date()
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        for days_back in range(5):
+            candidate = brt_today - timedelta(days=days_back)
+            date_str = candidate.strftime("%m-%d-%Y")
+            url = (
+                f"{_PTAX}/CotacaoDolarDia(dataCotacao=@d)"
+                f"?@d='{date_str}'&$top=1&$format=json&$select=cotacaoVenda"
+            )
+            try:
+                r = await client.get(url)
+                r.raise_for_status()
+                items = r.json().get("value", [])
+                if items:
+                    return float(items[0]["cotacaoVenda"])
+            except Exception:
+                continue
+    return None
 
 
 async def _ibovespa_change() -> float | None:

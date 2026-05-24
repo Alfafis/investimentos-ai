@@ -118,13 +118,7 @@ async def analyze_sentiment(
         ))
         scores.append(score)
 
-    # Include general market news if no ticker-specific found
-    if not relevant:
-        for item in all_items[:5]:
-            full_text = f"{item['title']} {item['description']}"
-            score = _score_text(full_text)
-            scores.append(score)
-
+    # No fallback to generic news — a score without relevant headlines is noise, not signal.
     avg_score = round(sum(scores) / len(scores), 3) if scores else 0.0
     label = "positive" if avg_score > 0.1 else ("negative" if avg_score < -0.1 else "neutral")
 

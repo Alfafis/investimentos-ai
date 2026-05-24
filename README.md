@@ -1,6 +1,6 @@
 # Investimentos AI
 
-Sistema de análise de investimentos para a Bolsa B3, composto por uma REST API, um servidor MCP com 22 ferramentas para Claude, e infraestrutura de experimento com agente autônomo.
+Sistema de análise de investimentos para a Bolsa B3, composto por uma REST API, um servidor MCP com 23 ferramentas para Claude, e infraestrutura de experimento com agente autônomo.
 
 ## Arquitetura
 
@@ -27,13 +27,13 @@ investimentos-ai/
 │       ├── simulation.py       # POST /simulation
 │       └── analysis.py         # GET /analysis/* (macro, risk, technical, fundamental…)
 ├── mcp_server/
-│   └── server.py               # 22 MCP tools para Claude
+│   └── server.py               # 23 MCP tools para Claude
 ├── agent/
-│   ├── claude_desktop_routines.md  # 5 rotinas para Claude Desktop (mecanismo principal)
+│   ├── claude_desktop_routines.md  # 6 rotinas para Claude Desktop (mecanismo principal)
 │   ├── run_experiment.ps1          # Runner manual via Claude Code CLI
 │   └── setup_scheduler.ps1         # Task Scheduler Windows (alternativa ao Desktop)
 ├── docs/
-│   ├── playbooks/              # investing.md, trader.md — fonte de verdade do agente
+│   ├── playbooks/              # investing.md, swing-trader.md, day-trader.md — fonte de verdade do agente
 │   ├── spec/                   # agents.md, skills.md, workflows.md, infrastructure.md
 │   ├── architecture/           # frameworks.md, training.md
 │   └── research/               # methodologies.md, quantitative.md, papers.md
@@ -138,7 +138,7 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 
 ---
 
-## MCP Tools (22 ferramentas para Claude)
+## MCP Tools (23 ferramentas para Claude)
 
 ### Integração
 
@@ -179,6 +179,7 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 | 20 | `get_paper_portfolio` | Posições abertas com custo médio (FIFO) |
 | 21 | `get_trade_outcomes` | Snapshot completo: caixa, P&L realizado/não realizado, patrimônio total, retorno % |
 | 22 | `export_experiment_csv` | Exporta trades e decisões para CSV em `/data/` |
+| 23 | `scan_market_news` | Varre RSS feeds e retorna B3 tickers rankeados por volume de notícias × sentimento |
 
 ---
 
@@ -190,13 +191,14 @@ Experimento de paper trading com agente autônomo rodando de seg–sex via **Cla
 
 Configuração em `agent/claude_desktop_routines.md`. Importar no Claude Desktop → Routines.
 
-| Rotina | Horário | Função |
-|--------|---------|--------|
-| Investimentos — Abertura | seg–sex 10h | Macro + scoring + compras/vendas + decisão |
-| Investimentos — Fechamento | seg–sex 17h | Stops/takes + P&L do dia + prep amanhã + relatório semanal (sex) |
-| Trader — Pré-Mercado | seg–sex 09h | Análise overnight + setups do dia (swing trade) |
-| Trader — Meio-Dia | seg–sex 13h | Gestão de posições abertas + novos setups |
-| Trader — Fechamento | seg–sex 17h30 | Zerar posições + relatório + relatório semanal (sex) |
+| # | Rotina | Horário | Função |
+|---|--------|---------|--------|
+| 0 | Radar de Mercado | seg–sex 08h | `scan_market_news` — detecta tickers em alta nas notícias |
+| 1 | Investimentos — Abertura | seg–sex 10h | Macro + scoring + compras/vendas + decisão |
+| 2 | Investimentos — Fechamento | seg–sex 17h | Stops/takes + P&L do dia + prep amanhã + relatório semanal (sex) |
+| 3 | Trader — Pré-Mercado | seg–sex 09h | Análise overnight + setups do dia (swing trade) |
+| 4 | Trader — Meio-Dia | seg–sex 13h | Gestão de posições abertas + novos setups |
+| 5 | Trader — Fechamento | seg–sex 17h30 | Zerar posições + relatório + relatório semanal (sex) |
 
 ### Fluxo de cada sessão
 
@@ -245,7 +247,8 @@ Logs em `logs/agent_YYYY-MM-DD-HHh.log` (ignorados pelo git).
 | Cotações B3 (fallback) | Yahoo Finance via `yfinance` | Quando Brapi não tem o ticker |
 | Histórico OHLCV | Yahoo Finance via `yfinance` | Backtesting e indicadores técnicos (200+ dias) |
 | Macro BR | BCB API (gratuita, sem key) | Selic, IPCA, PTax |
-| Notícias | InfoMoney RSS, Investing.com BR RSS | Sentimento PT-BR |
+| Notícias (sentimento) | InfoMoney RSS, Investing.com BR RSS | Sentimento ticker-specific PT-BR |
+| Notícias (radar) | MoneyTimes RSS, Suno RSS, InfoMoney RSS, Investing.com BR RSS | Detecção de tickers em alta |
 
 > **Nota:** Day trade real exige dados tick-a-tick (latência < 1s). yfinance tem ~15min delay — adequado apenas para swing trade e análise fundamentalista.
 

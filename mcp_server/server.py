@@ -382,7 +382,7 @@ async def get_sentiment(
 @mcp.tool()
 async def technical_analysis(
     ticker: str,
-    period: str = "6mo",
+    period: str = "1y",
 ) -> dict:
     """
     Compute technical indicators and derive a buy/sell/hold signal.
@@ -395,7 +395,7 @@ async def technical_analysis(
 
     Args:
         ticker: B3 symbol, e.g. "PETR4"
-        period: Data window — "3mo", "6mo", "1y"
+        period: Data window — "1y" (default, needed for EMA200), "6mo", "2y"
     """
     result = await detect_patterns_async(ticker, period)
     return result.model_dump()
