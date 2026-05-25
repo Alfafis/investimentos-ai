@@ -40,3 +40,6 @@ htmlcov/
 logs/
 data/
 *.db
+*.db-journal
+*.db-wal
+*.db-shm
