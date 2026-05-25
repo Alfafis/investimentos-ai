@@ -1,32 +1,23 @@
-# Registra o agente de investimentos no Windows Task Scheduler
-# Executa de hora em hora das 10h as 18h, segunda a sexta
+# Registra as 6 rotinas do Investimentos AI no Windows Task Scheduler
 # Rodar uma vez como Administrador: .\agent\setup_scheduler.ps1
 
-$TaskName = "InvestimentosAI-Agente"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$ScriptPath = Join-Path $ProjectRoot "agent\run_experiment.ps1"
+$RunnerPath  = Join-Path $ProjectRoot "agent\run_rotina.ps1"
 
-# Remove task existente se houver
-if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
-    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
-    Write-Host "Task anterior removida."
-}
+# Rotinas: nome da task, parametro -Rotina, horario (HH:mm), dias da semana
+$Rotinas = @(
+    @{ Task = "InvestimentosAI-Radar";             Rotina = "00-radar";              Hora = "08:00" }
+    @{ Task = "InvestimentosAI-TraderPre";          Rotina = "03-trader-pre";         Hora = "09:00" }
+    @{ Task = "InvestimentosAI-InvestingAbertura";  Rotina = "01-investing-abertura"; Hora = "10:00" }
+    @{ Task = "InvestimentosAI-TraderMid";          Rotina = "04-trader-mid";         Hora = "13:00" }
+    @{ Task = "InvestimentosAI-InvestingFechamento";Rotina = "02-investing-fechamento";Hora = "17:00" }
+    @{ Task = "InvestimentosAI-TraderFechamento";   Rotina = "05-trader-fechamento";  Hora = "17:30" }
+)
 
-$Action = New-ScheduledTaskAction `
-    -Execute "powershell.exe" `
-    -Argument "-NonInteractive -ExecutionPolicy Bypass -File `"$ScriptPath`"" `
-    -WorkingDirectory $ProjectRoot
-
-# Trigger: seg-sex, das 10h ate 18h, repetindo a cada 1 hora
-$Trigger = New-ScheduledTaskTrigger -Weekly `
-    -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday `
-    -At "10:00"
-
-$Trigger.RepetitionInterval = [TimeSpan]::FromHours(1)
-$Trigger.RepetitionDuration = [TimeSpan]::FromHours(8)   # 10h -> 18h
+$Weekdays = "Monday","Tuesday","Wednesday","Thursday","Friday"
 
 $Settings = New-ScheduledTaskSettingsSet `
-    -ExecutionTimeLimit ([TimeSpan]::FromMinutes(20)) `
+    -ExecutionTimeLimit ([TimeSpan]::FromMinutes(45)) `
     -MultipleInstances IgnoreNew `
     -StartWhenAvailable
 
@@ -35,21 +26,45 @@ $Principal = New-ScheduledTaskPrincipal `
     -LogonType Interactive `
     -RunLevel Limited
 
-Register-ScheduledTask `
-    -TaskName $TaskName `
-    -Action $Action `
-    -Trigger $Trigger `
-    -Settings $Settings `
-    -Principal $Principal `
-    -Description "Agente de investimentos B3 — roda horario 10h-18h seg-sex" | Out-Null
+foreach ($r in $Rotinas) {
+    if (Get-ScheduledTask -TaskName $r.Task -ErrorAction SilentlyContinue) {
+        Unregister-ScheduledTask -TaskName $r.Task -Confirm:$false
+    }
+
+    $Action = New-ScheduledTaskAction `
+        -Execute "powershell.exe" `
+        -Argument "-NonInteractive -ExecutionPolicy Bypass -File `"$RunnerPath`" -Rotina `"$($r.Rotina)`"" `
+        -WorkingDirectory $ProjectRoot
+
+    $Trigger = New-ScheduledTaskTrigger `
+        -Weekly `
+        -DaysOfWeek $Weekdays `
+        -At $r.Hora
+
+    Register-ScheduledTask `
+        -TaskName  $r.Task `
+        -Action    $Action `
+        -Trigger   $Trigger `
+        -Settings  $Settings `
+        -Principal $Principal `
+        -Description "Investimentos AI -- rotina $($r.Rotina) -- seg-sex $($r.Hora) BRT" | Out-Null
+
+    Write-Host "  [OK] $($r.Task) -- $($r.Hora) seg-sex"
+}
 
 Write-Host ""
-Write-Host "Task registrada: '$TaskName'"
-Write-Host "Script: $ScriptPath"
-Write-Host "Horario: 10h-18h, seg-sex, a cada 1 hora"
+Write-Host "6 tasks registradas. Horarios (BRT, seg-sex):"
+Write-Host "  08:00  InvestimentosAI-Radar"
+Write-Host "  09:00  InvestimentosAI-TraderPre"
+Write-Host "  10:00  InvestimentosAI-InvestingAbertura"
+Write-Host "  13:00  InvestimentosAI-TraderMid"
+Write-Host "  17:00  InvestimentosAI-InvestingFechamento"
+Write-Host "  17:30  InvestimentosAI-TraderFechamento"
+Write-Host ""
+Write-Host "Runner: $RunnerPath"
 Write-Host ""
 Write-Host "Comandos uteis:"
-Write-Host "  Ver task:     Get-ScheduledTask -TaskName '$TaskName'"
-Write-Host "  Rodar agora:  Start-ScheduledTask -TaskName '$TaskName'"
-Write-Host "  Pausar:       Disable-ScheduledTask -TaskName '$TaskName'"
-Write-Host "  Remover:      Unregister-ScheduledTask -TaskName '$TaskName' -Confirm:`$false"
+Write-Host "  Listar:      Get-ScheduledTask -TaskName 'InvestimentosAI-*'"
+Write-Host "  Rodar agora: Start-ScheduledTask -TaskName 'InvestimentosAI-Radar'"
+Write-Host "  Pausar:      Get-ScheduledTask -TaskName 'InvestimentosAI-*' | Disable-ScheduledTask"
+Write-Host "  Remover:     Get-ScheduledTask -TaskName 'InvestimentosAI-*' | Unregister-ScheduledTask -Confirm:`$false"

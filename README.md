@@ -29,9 +29,16 @@ investimentos-ai/
 ├── mcp_server/
 │   └── server.py               # 23 MCP tools para Claude
 ├── agent/
-│   ├── claude_desktop_scheduled.md  # 6 rotinas para Claude Desktop (mecanismo principal)
-│   ├── run_experiment.ps1          # Runner manual via Claude Code CLI
-│   └── setup_scheduler.ps1         # Task Scheduler Windows (alternativa ao Desktop)
+│   ├── run_rotina.ps1              # Runner principal — carrega rotina + playbook → claude -p
+│   ├── setup_scheduler.ps1         # Registra 6 tasks no Windows Task Scheduler (rodar 1x como Admin)
+│   ├── rotina-00-radar.md          # 08h — scan de notícias overnight
+│   ├── rotina-01-investing-abertura.md  # 10h — scoring + compras/vendas
+│   ├── rotina-02-investing-fechamento.md # 17h — stops/takes + P&L + prep amanhã
+│   ├── rotina-03-trader-pre.md     # 09h — análise overnight + setups
+│   ├── rotina-04-trader-mid.md     # 13h — monitoramento mid-session
+│   ├── rotina-05-trader-fechamento.md   # 17h30 — zerar posições + relatório
+│   ├── claude_desktop_scheduled.md # Referência das rotinas (Claude Desktop alternativo)
+│   └── run_experiment.ps1          # Runner legado (sessão única manual)
 ├── docs/
 │   ├── playbooks/              # investing.md, swing-trader.md, day-trader.md — fonte de verdade do agente
 │   ├── spec/                   # agents.md, skills.md, workflows.md, infrastructure.md
@@ -185,11 +192,15 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 
 ## Agente Autônomo (Experimento 5 dias úteis)
 
-Experimento de paper trading com agente autônomo rodando de seg–sex via **Claude Desktop Scheduled**.
+Experimento de paper trading com agente autônomo rodando de seg–sex via **Windows Task Scheduler**.
 
-### Mecanismo principal — Claude Desktop Scheduled
+### Mecanismo principal — Windows Task Scheduler
 
-Configuração em `agent/claude_desktop_scheduled.md`. Importar no Claude Desktop → Cowork -> Scheduled.
+Registrar as 6 tasks (rodar uma vez como Administrador):
+
+```powershell
+.\agent\setup_scheduler.ps1
+```
 
 | # | Rotina | Horário | Função |
 |---|--------|---------|--------|
@@ -199,6 +210,8 @@ Configuração em `agent/claude_desktop_scheduled.md`. Importar no Claude Deskto
 | 3 | Trader — Pré-Mercado | seg–sex 09h | Análise overnight + setups do dia (swing trade) |
 | 4 | Trader — Meio-Dia | seg–sex 13h | Gestão de posições abertas + novos setups |
 | 5 | Trader — Fechamento | seg–sex 17h30 | Zerar posições + relatório + relatório semanal (sex) |
+
+Cada task chama `run_rotina.ps1 -Rotina <id>`, que carrega o arquivo `agent/rotina-<id>.md` e o playbook correspondente como system prompt para `claude -p`.
 
 ### Fluxo de cada sessão
 
@@ -215,6 +228,21 @@ get_macro_context
 
 Sextas-feiras: relatório semanal completo com patrimônio final, win rate, aprendizados.
 
+### Runner manual
+
+```powershell
+# Rodar rotina específica
+.\agent\run_rotina.ps1 -Rotina "00-radar"
+.\agent\run_rotina.ps1 -Rotina "01-investing-abertura"
+
+# Comandos Task Scheduler
+Get-ScheduledTask -TaskName "InvestimentosAI-*"             # listar
+Start-ScheduledTask -TaskName "InvestimentosAI-Radar"       # disparar manualmente
+Get-ScheduledTask -TaskName "InvestimentosAI-*" | Disable-ScheduledTask  # pausar tudo
+```
+
+Logs em `logs/agent-<rotina>-YYYY-MM-DD.log` e relatórios em `logs/<rotina>-YYYY-MM-DD-<hora>.md` (ignorados pelo git).
+
 ### Persistência (SQLite via Docker volume)
 
 ```bash
@@ -223,19 +251,9 @@ docker exec investimentos-ai-mcp-1 sqlite3 /data/experiment.db \
   "SELECT action, ticker, price, quantity, reason FROM paper_trades ORDER BY timestamp"
 
 # Exportar para CSV (via MCP tool export_experiment_csv)
-# Arquivos gerados em /data/trades.csv e /data/decisions.csv
 docker cp investimentos-ai-mcp-1:/data/trades.csv ./trades.csv
 docker cp investimentos-ai-mcp-1:/data/decisions.csv ./decisions.csv
 ```
-
-### Runner manual (alternativa ao Claude Desktop)
-
-```powershell
-.\agent\run_experiment.ps1
-.\agent\run_experiment.ps1 -Watchlist "VALE3,ITUB4,PETR4,B3SA3,SBSP3,ABEV3,WEGE3,BBAS3,PRIO3,EMBJ3,EQTL3,RENT3,VIVT3,SUZB3,CMIG4,RDOR3,BBDC4,GGBR4" -Cash 5000
-```
-
-Logs em `logs/agent_YYYY-MM-DD-HHh.log` (ignorados pelo git).
 
 ---
 

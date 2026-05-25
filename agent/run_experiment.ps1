@@ -51,6 +51,35 @@ Se mercado fechado:
 6. save_decision com analise pre-mercado
 
 Criterios do playbook sao lei. Justifique cada decisao de forma auditavel.
+
+ULTIMO PASSO (obrigatorio): Use a ferramenta Write para gerar o relatorio da sessao:
+- Arquivo: logs/investing-$SessionId.md
+- NAO sobrescreva — o SessionId no nome garante unicidade
+- Conteudo em markdown:
+
+# Pipeline Diario de Investimentos — $SessionId
+
+## Contexto Macro
+[modo do mercado, Ibovespa, USD/BRL, modo conservador?]
+
+## Equity Snapshot
+[cash_brl | invested_brl | unrealized_pnl_brl | total_equity_brl | return_pct]
+
+## Portfolio — Posicoes Abertas
+[ticker | qty | preco medio | preco atual | P&L% | distancia do stop]
+
+## Scoring da Watchlist
+[ticker | score | RSI | MACD | EMA200 | sinal]
+
+## Acoes Tomadas
+### Vendas: [ticker | razao | preco | P&L]
+### Compras: [ticker | qty | preco | razao]
+
+## Reasoning e Alertas
+[decisoes principais e riscos identificados]
+
+---
+_Sessao: $SessionId | Gerado: [timestamp completo]_
 "@
 
 Write-Log "[$SessionId] Iniciando sessao do agente"
