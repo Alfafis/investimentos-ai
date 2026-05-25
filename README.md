@@ -29,7 +29,7 @@ investimentos-ai/
 ├── mcp_server/
 │   └── server.py               # 23 MCP tools para Claude
 ├── agent/
-│   ├── claude_desktop_routines.md  # 6 rotinas para Claude Desktop (mecanismo principal)
+│   ├── claude_desktop_scheduled.md  # 6 rotinas para Claude Desktop (mecanismo principal)
 │   ├── run_experiment.ps1          # Runner manual via Claude Code CLI
 │   └── setup_scheduler.ps1         # Task Scheduler Windows (alternativa ao Desktop)
 ├── docs/
@@ -185,11 +185,11 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 
 ## Agente Autônomo (Experimento 5 dias úteis)
 
-Experimento de paper trading com agente autônomo rodando de seg–sex via **Claude Desktop Routines**.
+Experimento de paper trading com agente autônomo rodando de seg–sex via **Claude Desktop Scheduled**.
 
-### Mecanismo principal — Claude Desktop Routines
+### Mecanismo principal — Claude Desktop Scheduled
 
-Configuração em `agent/claude_desktop_routines.md`. Importar no Claude Desktop → Routines.
+Configuração em `agent/claude_desktop_scheduled.md`. Importar no Claude Desktop → Cowork -> Scheduled.
 
 | # | Rotina | Horário | Função |
 |---|--------|---------|--------|

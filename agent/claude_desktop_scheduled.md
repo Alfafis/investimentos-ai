@@ -1,7 +1,7 @@
-# Claude Desktop Routines — Investimentos AI
+# Claude Desktop Scheduled — Investimentos AI
 
 6 rotinas para o experimento de 5 dias úteis.
-Importar manualmente no Claude Desktop → Routines.
+Importar manualmente no Claude Desktop -> Cowork → Scheduled.
 
 Pasta do projeto e branch `main` já configurados nas rotinas.
 
@@ -220,7 +220,7 @@ F. save_decision com:
 
 ## Rotinas 3–5 — Trader (Swing Trade)
 
-> **Limitação importante:** a infraestrutura atual usa yfinance (~15min delay) e routines agendadas.
+> **Limitação importante:** a infraestrutura atual usa yfinance (~15min delay) e scheduled agendadas.
 > Isso suporta **swing trade** (horizonte de dias). Day trade real exige dados tick-a-tick e
 > monitoramento em segundos — requer WebSocket + fonte intraday (B3 Market Data, Polygon.io).
 
