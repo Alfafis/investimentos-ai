@@ -26,8 +26,10 @@ def _ensure_db_dir() -> None:
 
 def _connect() -> sqlite3.Connection:
     _ensure_db_dir()
-    conn = sqlite3.connect(_DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(_DB_PATH, check_same_thread=False, timeout=10)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 

@@ -53,22 +53,22 @@ def _ticker_in_text(ticker: str, text: str) -> bool:
 
 
 async def _fetch_rss(url: str, client: httpx.AsyncClient) -> list[dict]:
+    import logging
+    import xml.etree.ElementTree as ET
     try:
-        r = await client.get(url, timeout=8.0)
+        r = await client.get(url, timeout=12.0)
         r.raise_for_status()
-        # Simple RSS XML parser (avoid feedparser dependency in Docker)
-        import xml.etree.ElementTree as ET
         root = ET.fromstring(r.text)
         items = []
-        ns = ""
         for item in root.iter("item"):
             title = item.findtext("title") or ""
             desc = item.findtext("description") or ""
             link = item.findtext("link") or ""
             pub_date = item.findtext("pubDate") or ""
             items.append({"title": title, "description": desc, "link": link, "pub_date": pub_date})
-        return items[:20]  # cap at 20 per feed
-    except Exception:
+        return items[:20]
+    except Exception as e:
+        logging.getLogger(__name__).warning("RSS fetch failed %s: %s", url, e)
         return []
 
 
