@@ -15,12 +15,13 @@ from datetime import date, datetime, timezone
 from typing import Optional
 
 _DB_PATH = os.environ.get("EXPERIMENT_DB_PATH", "/data/experiment.db")
+_DATA_DIR = os.path.dirname(_DB_PATH) or "."
+_LOG_DIR = os.environ.get("EXPERIMENT_LOG_DIR", "/app/logs")
 
 
 def _ensure_db_dir() -> None:
-    db_dir = os.path.dirname(_DB_PATH)
-    if db_dir:
-        os.makedirs(db_dir, exist_ok=True)
+    os.makedirs(_DATA_DIR, exist_ok=True)
+    os.makedirs(_LOG_DIR, exist_ok=True)
 
 
 def _connect() -> sqlite3.Connection:
@@ -74,12 +75,20 @@ def init_db() -> None:
 def save_decision(session_id: str, decision: dict) -> int:
     init_db()
     ts = datetime.now(timezone.utc).isoformat()
+    decision_json = json.dumps(decision, ensure_ascii=False)
     with _db() as conn:
         cur = conn.execute(
             "INSERT INTO decisions (session_id, timestamp, decision) VALUES (?, ?, ?)",
-            (session_id, ts, json.dumps(decision, ensure_ascii=False)),
+            (session_id, ts, decision_json),
         )
-        return cur.lastrowid
+        row_id = cur.lastrowid
+
+    log_date = ts[:10]  # YYYY-MM-DD
+    log_path = os.path.join(_LOG_DIR, f"{log_date}.log")
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"{ts} | {session_id} | {decision_json}\n")
+
+    return row_id
 
 
 def get_decision_log(

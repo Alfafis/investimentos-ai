@@ -38,4 +38,5 @@ htmlcov/
 
 # Experiment logs and DB (runtime artifacts)
 logs/
+data/
 *.db
