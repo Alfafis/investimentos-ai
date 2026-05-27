@@ -99,6 +99,35 @@ E. save_decision com:
 
 # Trader — Fechamento YYYY-MM-DD 17h30
 
+## Resumo — YYYY-MM-DD
+
+[N/6 agentes rodaram sem erro. Se algum falhou, indicar qual e o motivo.]
+
+### Decisões
+Gerar tabela markdown com exatamente estas colunas — uma linha por ativo relevante do dia:
+| Ativo | Ação | Resultado |
+|-------|------|-----------|
+| XXXX | [SELL/BUY/VETADO/Monitorando — motivo curto] | [P&L ou métrica determinante] |
+
+Patrimônio final: R$ X.XXX,XX | Posição: X% caixa / X% investido
+
+### Destaques críticos — Técnico
+Para cada evento notável, UMA linha por ativo no formato:
+TICKER – [rótulo]: [frase com métricas exatas — RSI, EMA200, MACD, DCF, P/L, ROE, setup, margem, veto]
+Não encerrar com conclusão genérica ("Playbook bloqueou", "sistema correto") — os dados falam por si.
+
+### Destaques críticos — Em Palavras Simples
+Reescrever cada item acima do zero em linguagem acessível — NÃO copiar frases da seção técnica.
+Uma linha por ativo, mesmo formato: TICKER – [rótulo]: [explicação sem jargão]
+Traduzir obrigatoriamente: RSI → "indicador de força"; EMA200 → "média dos últimos 200 dias";
+DCF -X% → "vale X% menos do que custa"; P/L Nx → "paga R$N por R$1 de lucro";
+Time stop → "prazo esgotado sem atingir a meta"; Hard veto → "bloqueio automático do sistema".
+
+### Erros
+[exceções MCP, RSS escasso, timeouts — "Nenhum crítico." se tudo ok]
+
+---
+
 ## Equity Snapshot Final
 [cash_brl | unrealized_pnl_brl | realized_pnl_brl | total_equity_brl | return_pct_acumulado]
 
