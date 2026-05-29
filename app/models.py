@@ -186,6 +186,9 @@ class TechnicalSignal(BaseModel):
     bb_mid: Optional[float] = None
     bb_lower: Optional[float] = None
     candlestick_pattern: Optional[str] = None
+    volume_last: Optional[int] = None
+    volume_avg_20d: Optional[float] = None
+    volume_ratio_20d: Optional[float] = None
     signal: str  # "buy" | "sell" | "hold"
     confidence: float  # 0.0-1.0
     reasons: list[str]

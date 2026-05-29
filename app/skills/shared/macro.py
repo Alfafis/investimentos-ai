@@ -74,6 +74,7 @@ async def _ptax_usd() -> float | None:
 async def _ibovespa_change() -> float | None:
     try:
         import asyncio
+        import pandas as pd
         import yfinance as yf
 
         loop = asyncio.get_event_loop()
@@ -84,7 +85,7 @@ async def _ibovespa_change() -> float | None:
         if df.empty or len(df) < 2:
             return None
         closes = df["Close"].dropna()
-        if isinstance(closes.columns if hasattr(closes, "columns") else None, object):
+        if isinstance(closes, pd.DataFrame):
             closes = closes.iloc[:, 0]
         prev, last = float(closes.iloc[-2]), float(closes.iloc[-1])
         return round((last - prev) / prev * 100, 2)

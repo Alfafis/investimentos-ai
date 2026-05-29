@@ -135,6 +135,19 @@ def detect_patterns(ticker: str, period: str = "1y", df: Optional[pd.DataFrame] 
     cur_bb_lower = float(bb_lower.iloc[-1])
     cur_price = float(close.iloc[-1])
 
+    # Volume indicators
+    vol_last: Optional[int] = None
+    vol_avg_20d: Optional[float] = None
+    vol_ratio: Optional[float] = None
+    if "Volume" in df.columns:
+        volume = df["Volume"].dropna()
+        if not volume.empty:
+            vol_last = int(volume.iloc[-1])
+            avg = volume.rolling(20).mean().iloc[-1]
+            if not pd.isna(avg) and avg > 0:
+                vol_avg_20d = round(float(avg), 0)
+                vol_ratio = round(vol_last / vol_avg_20d, 2)
+
     bullish = 0
     bearish = 0
     reasons: list[str] = []
@@ -219,6 +232,9 @@ def detect_patterns(ticker: str, period: str = "1y", df: Optional[pd.DataFrame] 
         bb_mid=round(cur_bb_mid, 2),
         bb_lower=round(cur_bb_lower, 2),
         candlestick_pattern=candle,
+        volume_last=vol_last,
+        volume_avg_20d=vol_avg_20d,
+        volume_ratio_20d=vol_ratio,
         signal=signal,
         confidence=confidence,
         reasons=reasons,

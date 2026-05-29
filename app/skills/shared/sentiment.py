@@ -27,6 +27,9 @@ _POSITIVE = {
     "acima", "compra", "recomenda", "upgrade", "outperform", "dividendo",
     "resultado", "bom", "otimismo", "recuperação", "aprovado", "contrato",
     "parceria", "investimento", "aumento", "superou", "bateu",
+    "autoriza", "autorização", "autorizou", "aprovou", "aprovação",
+    "fusão", "aquisição", "joint", "venture", "bilhões", "bilhão",
+    "licença", "licenciamento", "acordo", "expansão",
 }
 
 _NEGATIVE = {

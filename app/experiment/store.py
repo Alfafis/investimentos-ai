@@ -48,7 +48,7 @@ def init_db() -> None:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS decisions (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id  TEXT    NOT NULL,
+                session_id  TEXT    NOT NULL UNIQUE,
                 timestamp   TEXT    NOT NULL,
                 decision    TEXT    NOT NULL
             );
@@ -56,18 +56,26 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_decisions_ts      ON decisions(timestamp);
 
             CREATE TABLE IF NOT EXISTS paper_trades (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp   TEXT    NOT NULL,
-                action      TEXT    NOT NULL CHECK(action IN ('buy','sell')),
-                ticker      TEXT    NOT NULL,
-                price       REAL    NOT NULL,
-                quantity    REAL    NOT NULL,
-                reason      TEXT,
-                session_id  TEXT
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp    TEXT    NOT NULL,
+                action       TEXT    NOT NULL CHECK(action IN ('buy','sell')),
+                ticker       TEXT    NOT NULL,
+                price        REAL    NOT NULL,
+                quantity     REAL    NOT NULL,
+                stop_price   REAL,
+                target_price REAL,
+                reason       TEXT,
+                session_id   TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_trades_ticker ON paper_trades(ticker);
             CREATE INDEX IF NOT EXISTS idx_trades_ts     ON paper_trades(timestamp);
         """)
+        # Migrate existing DBs: add columns if absent
+        for col, typedef in [("stop_price", "REAL"), ("target_price", "REAL")]:
+            try:
+                conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {typedef}")
+            except sqlite3.OperationalError:
+                pass  # column already exists
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +87,12 @@ def save_decision(session_id: str, decision: dict) -> int:
     ts = datetime.now(timezone.utc).isoformat()
     decision_json = json.dumps(decision, ensure_ascii=False)
     with _db() as conn:
+        # Idempotent: return existing row if session_id already saved
+        existing = conn.execute(
+            "SELECT id FROM decisions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        if existing:
+            return existing["id"]
         cur = conn.execute(
             "INSERT INTO decisions (session_id, timestamp, decision) VALUES (?, ?, ?)",
             (session_id, ts, decision_json),
@@ -137,15 +151,21 @@ def save_paper_trade(
     quantity: float,
     reason: Optional[str] = None,
     session_id: Optional[str] = None,
+    stop_price: Optional[float] = None,
+    target_price: Optional[float] = None,
 ) -> int:
     init_db()
+    if action.lower() == "buy" and stop_price is not None and stop_price >= price:
+        raise ValueError(f"stop_price {stop_price} >= entry {price} — invalid for buy")
+    if action.lower() == "sell" and stop_price is not None and stop_price <= price:
+        raise ValueError(f"stop_price {stop_price} <= entry {price} — invalid for sell")
     ts = datetime.now(timezone.utc).isoformat()
     with _db() as conn:
         cur = conn.execute(
             """INSERT INTO paper_trades
-               (timestamp, action, ticker, price, quantity, reason, session_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (ts, action.lower(), ticker.upper(), price, quantity, reason, session_id),
+               (timestamp, action, ticker, price, quantity, stop_price, target_price, reason, session_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (ts, action.lower(), ticker.upper(), price, quantity, stop_price, target_price, reason, session_id),
         )
         return cur.lastrowid
 
@@ -300,7 +320,7 @@ def export_experiment_csv() -> dict:
     with _db() as conn:
         trades = conn.execute(
             "SELECT id, timestamp, action, ticker, price, quantity, "
-            "ROUND(price*quantity,2) as trade_value_brl, reason, session_id "
+            "ROUND(price*quantity,2) as trade_value_brl, stop_price, target_price, reason, session_id "
             "FROM paper_trades ORDER BY timestamp ASC"
         ).fetchall()
         decisions = conn.execute(
@@ -311,10 +331,11 @@ def export_experiment_csv() -> dict:
     trades_buf = io.StringIO()
     tw = csv.writer(trades_buf)
     tw.writerow(["id", "timestamp", "action", "ticker", "price", "quantity",
-                 "trade_value_brl", "reason", "session_id"])
+                 "trade_value_brl", "stop_price", "target_price", "reason", "session_id"])
     for r in trades:
         tw.writerow([r["id"], r["timestamp"], r["action"], r["ticker"],
                      r["price"], r["quantity"], r["trade_value_brl"],
+                     r["stop_price"] or "", r["target_price"] or "",
                      r["reason"] or "", r["session_id"] or ""])
     trades_csv = trades_buf.getvalue()
 

@@ -144,6 +144,15 @@ async def score_ticker(
 
     passes, filter_failures = _quality_filters(fundamental)
 
+    # Hard veto: price below EMA200 — playbook rule, no exception
+    cur_price = fundamental.current_price or 0.0
+    ema200 = technical.ema_200
+    if cur_price and ema200 and cur_price < ema200:
+        passes = False
+        filter_failures = list(filter_failures) + [
+            f"price R${cur_price:.2f} < EMA200 R${ema200:.2f} — hard veto"
+        ]
+
     tech_score, tech_reasons = _technical_score(technical)
     fund_score, fund_reasons = _fundamental_score(fundamental)
     sent_score, sent_reasons = _sentiment_score(sentiment)

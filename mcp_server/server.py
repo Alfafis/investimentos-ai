@@ -494,7 +494,7 @@ async def run_investing_decision(
     from app.models import PortfolioInput, PortfolioPosition
 
     portfolio = None
-    if positions:
+    if positions is not None:
         parsed = [
             PortfolioPosition(
                 ticker=p["ticker"].upper(),
@@ -504,6 +504,9 @@ async def run_investing_decision(
             for p in positions
         ]
         portfolio = PortfolioInput(positions=parsed, cash=cash)
+    elif cash > 0:
+        # Cash-only state: no open positions but capital available for allocation
+        portfolio = PortfolioInput(positions=[], cash=cash)
 
     tickers = [t.strip().upper() for t in watchlist]
     decision = await run_investing_pipeline(tickers, portfolio)
@@ -596,6 +599,8 @@ def save_paper_trade(
     quantity: float,
     reason: Optional[str] = None,
     session_id: Optional[str] = None,
+    stop_price: Optional[float] = None,
+    target_price: Optional[float] = None,
 ) -> dict:
     """
     Record a virtual buy or sell action for paper trading during the experiment.
@@ -607,6 +612,8 @@ def save_paper_trade(
         ticker: B3 symbol, e.g. "PETR4"
         price: Execution price in BRL (use current market price from get_stock_quotes)
         quantity: Number of shares (can be fractional for BRL-based sizing)
+        stop_price: Stop-loss price (must be < price for buys, > price for sells)
+        target_price: Take-profit target price
         reason: Short human-readable rationale, e.g. "RSI oversold + above EMA200"
         session_id: Optional session tag to group trades with decisions
 
@@ -615,11 +622,16 @@ def save_paper_trade(
     """
     if action.lower() not in ("buy", "sell"):
         return {"error": f"action must be 'buy' or 'sell', got '{action}'"}
-    row_id = _save_paper_trade(action, ticker, price, quantity, reason, session_id)
+    try:
+        row_id = _save_paper_trade(action, ticker, price, quantity, reason, session_id, stop_price, target_price)
+    except ValueError as e:
+        return {"error": str(e)}
     return {
         "saved": True,
         "id": row_id,
         "trade_value_brl": round(price * quantity, 2),
+        "stop_price": stop_price,
+        "target_price": target_price,
     }
 
 
