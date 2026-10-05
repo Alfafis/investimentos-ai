@@ -61,12 +61,7 @@ def test_sortino_ignores_upside_volatility():
     assert risk._sortino(r) > risk._sharpe(r)
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: _sortino sem nenhum retorno excedente negativo faz std() de série vazia = NaN; "
-    "o guard `downside == 0` não pega NaN, então devolve NaN em vez de 0.0 "
-    "(NaN propaga para RiskMetrics.sortino_ratio e quebra serialização JSON estrita)."
-))
-def test_bug_sortino_without_downside_is_nan_not_zero():
+def test_sortino_without_downside_is_zero():
     assert risk._sortino(pd.Series([0.01, 0.02, 0.03])) == 0.0
 
 

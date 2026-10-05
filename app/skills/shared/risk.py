@@ -74,8 +74,10 @@ def _sharpe(returns: pd.Series, risk_free_annual: float = 0.105) -> float:
 def _sortino(returns: pd.Series, risk_free_annual: float = 0.105) -> float:
     rf_daily = (1 + risk_free_annual) ** (1 / _ANNUALIZE) - 1
     excess = returns - rf_daily
+    # Sem >=2 retornos excedentes negativos, std() dá NaN (ddof=1); como em _sharpe,
+    # caso degenerado devolve 0.0 (float, nunca NaN, p/ RiskMetrics.sortino_ratio).
     downside = excess[excess < 0].std()
-    if downside == 0:
+    if pd.isna(downside) or downside == 0:
         return 0.0
     return float(excess.mean() / downside * np.sqrt(_ANNUALIZE))
 
