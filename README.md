@@ -80,7 +80,7 @@ docker compose up --build
 |---------|-----|
 | REST API + Swagger | `http://localhost:8000/docs` |
 | MCP HTTP server | `http://localhost:8001` |
-| Redis | `localhost:6379` |
+| Redis | `127.0.0.1:6380` |
 
 ### 3. Local (sem Docker)
 
