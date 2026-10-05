@@ -21,15 +21,19 @@ Esta configuração serve como alternativa caso o Task Scheduler não esteja dis
 
 ## Logs gerados por execução
 
+O agente não tem a ferramenta Write (ver "Permissões do agente" no README). O relatório é a
+resposta final do `claude -p`, gravada pelo `run_rotina.ps1`:
+
 ```
 logs/
-├── radar-YYYY-MM-DD-08h.md
-├── trader-pre-YYYY-MM-DD-09h.md
-├── investing-YYYY-MM-DD-10h.md
-├── trader-mid-YYYY-MM-DD-13h.md
-├── fechamento-YYYY-MM-DD-17h.md          (sexta: -semanal.md)
-└── trader-fechamento-YYYY-MM-DD-17h30.md  (sexta: -semanal.md)
+├── 00-radar-YYYY-MM-DD-08h00.md
+├── 03-trader-pre-YYYY-MM-DD-09h00.md
+├── 01-investing-abertura-YYYY-MM-DD-10h00.md
+├── 04-trader-mid-YYYY-MM-DD-13h00.md
+├── 02-investing-fechamento-YYYY-MM-DD-17h00.md
+└── 05-trader-fechamento-YYYY-MM-DD-17h30.md
 ```
 
-Cada execução gera um arquivo único (timestamp no nome — sem sobrescrita).
+Se o arquivo já existir (reexecução no mesmo minuto), o runner acrescenta `-2`, `-3`… — nunca sobrescreve.
+
 Persistência estruturada: SQLite via `save_decision` / `save_paper_trade` (MCP).

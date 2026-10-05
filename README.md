@@ -97,6 +97,25 @@ python -m mcp_server.server
 python -m mcp_server.server --transport streamable-http --port 8001
 ```
 
+### 4. Permissões do agente autônomo (allowlist)
+
+O agente roda sem supervisão e lê texto externo (RSS via `scan_market_news` e `get_sentiment`).
+Uma manchete com prompt injection não pode virar comando na máquina, por isso os runners
+(`agent/run_rotina.ps1`, `agent/run_experiment.ps1`) **não** usam `--dangerously-skip-permissions`:
+
+| Flag | Efeito |
+|------|--------|
+| `--mcp-config agent/mcp-config.json --strict-mcp-config` | Carrega só o servidor `investimentos-ai` (`http://127.0.0.1:8001/mcp`) do arquivo versionado; ignora MCPs globais da máquina |
+| `--permission-mode dontAsk` | Tool fora da allowlist é negada na hora — não trava esperando prompt |
+| `--allowedTools mcp__investimentos-ai__<tool>,...` | Só as tools MCP usadas pelas rotinas (lista explícita no runner) |
+| `--disallowedTools Bash,PowerShell,Write,Edit,NotebookEdit,WebFetch,WebSearch,Read,Glob,Grep` | Remove essas tools do contexto, mesmo que o `settings.json` da máquina as libere |
+
+Consequências:
+- O agente não escreve arquivos. O relatório `.md` é a resposta final do `claude -p`, gravada pelo runner em `logs/`.
+- O MCP server precisa estar rodando em `127.0.0.1:8001` antes das rotinas (`docker compose up -d`). Não é preciso `claude mcp add`.
+- Para liberar uma tool MCP nova para o agente, adicione o nome em `$AllowedTools` no runner. Nunca libere Bash, Write, Edit, WebFetch nem WebSearch.
+- Requer Claude Code com suporte a `--permission-mode dontAsk` e `--strict-mcp-config`. Em versão antiga o CLI recusa o flag e a rotina falha com erro no log, sem rodar sem proteção.
+
 ---
 
 ## REST API
@@ -241,7 +260,7 @@ Start-ScheduledTask -TaskName "InvestimentosAI-Radar"       # disparar manualmen
 Get-ScheduledTask -TaskName "InvestimentosAI-*" | Disable-ScheduledTask  # pausar tudo
 ```
 
-Logs em `logs/agent-<rotina>-YYYY-MM-DD.log` e relatórios em `logs/<rotina>-YYYY-MM-DD-<hora>.md` (ignorados pelo git).
+Logs em `logs/agent-<rotina>-YYYY-MM-DD.log` e relatórios em `logs/<rotina>-YYYY-MM-DD-<HH>h<MM>.md` (ignorados pelo git). O relatório é gravado pelo runner a partir da resposta final do agente — o agente não tem Write.
 
 ### Persistência (SQLite via Docker volume)
 

@@ -18,8 +18,8 @@ Siga rigorosamente o playbook em docs/playbooks/swing-trader.md.
 Capital inicial do experimento: R$ 5.000 (fixo)
 
 REGRAS ABSOLUTAS (não negociáveis):
-1. Use APENAS MCP tools. NUNCA use Bash, Python, Read, Edit ou qualquer ferramenta de filesystem — exceto Write no último passo desta rotina para gerar o relatório .md em logs/.
-2. NÃO crie arquivos de nenhum tipo — exceto o relatório final .md em logs/ no último passo (único arquivo permitido por execução, nunca sobrescreva).
+1. Use APENAS MCP tools. NUNCA use Bash, Python, Read, Write, Edit ou qualquer ferramenta de filesystem (o runner bloqueia todas elas).
+2. NÃO crie arquivos de nenhum tipo. O relatório final é entregue como sua resposta de texto; o runner (run_rotina.ps1) grava em logs/.
 3. Se uma MCP tool falhar: reporte o erro na conversa e PARE essa etapa. NUNCA crie fallback, NUNCA improvise, NUNCA acesse o filesystem como alternativa.
 4. Toda persistência vai exclusivamente para save_decision e save_paper_trade via MCP.
 
@@ -66,9 +66,9 @@ Regras invioláveis do playbook:
 - Risco diário máximo 3–5% do capital total
 - Dados com ~15min delay — não usar para scalping, apenas swing (dias)
 
-ÚLTIMO PASSO — Relatório Markdown (obrigatório, use a ferramenta Write):
-- Arquivo: logs/trader-pre-YYYY-MM-DD-09h.md  (ex: logs/trader-pre-2026-05-25-09h.md)
-- NÃO sobrescreva — timestamp no nome garante unicidade
+ÚLTIMO PASSO — Relatório Markdown (obrigatório):
+- Sua resposta final deve ser EXCLUSIVAMENTE o relatório abaixo, em markdown, sem texto antes ou depois.
+- NÃO use a ferramenta Write — o runner grava sua resposta final em logs/ com nome único.
 - Conteúdo:
 
 # Trader — Pré-Mercado YYYY-MM-DD 09h
