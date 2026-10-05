@@ -58,12 +58,7 @@ def test_mcp_get_paper_portfolio(store):
     assert r["count"] == 1 and r["positions"][0]["ticker"] == "VALE3"
 
 
-@pytest.mark.xfail(strict=True, reason=(
-    "BUG: get_paper_portfolio documenta FIFO, mas avg_buy_price é a média ponderada de "
-    "TODAS as compras, sem baixar os lotes consumidos pelas vendas. Após vender o 1º lote "
-    "inteiro, o custo médio restante deveria ser o do 2º lote (40.0), mas sai 35.0."
-))
-def test_bug_avg_cost_ignores_fifo_consumption(store):
+def test_avg_cost_follows_fifo_consumption(store):
     insert_trade(store, "2026-05-25T10:00:00", "buy", "PETR4", 30.0, 10)
     insert_trade(store, "2026-05-26T10:00:00", "buy", "PETR4", 40.0, 10)
     insert_trade(store, "2026-05-27T10:00:00", "sell", "PETR4", 50.0, 10)

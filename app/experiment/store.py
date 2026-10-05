@@ -247,47 +247,67 @@ def save_paper_trade(
         return SavedTrade(cur.lastrowid, True, dict(row))
 
 
+def _fifo_match(rows) -> tuple[list[dict], dict[str, list[dict]]]:
+    """FIFO matching of trades (rows ordered by timestamp ASC).
+
+    Each sell consumes the oldest buy lots first. Sell quantity beyond the
+    available lots is ignored (no short positions).
+    Returns (completed matches, remaining open lots per ticker).
+    """
+    completed: list[dict] = []
+    queues: dict[str, list[dict]] = {}
+    for t in rows:
+        queue = queues.setdefault(t["ticker"], [])
+        if t["action"] == "buy":
+            queue.append({"price": t["price"], "qty": t["quantity"], "ts": t["timestamp"]})
+            continue
+        sell_qty = t["quantity"]
+        sell_price = t["price"]
+        while sell_qty > 0 and queue:
+            buy = queue[0]
+            matched = min(buy["qty"], sell_qty)
+            pnl = (sell_price - buy["price"]) * matched
+            pnl_pct = (sell_price - buy["price"]) / buy["price"] * 100
+            completed.append({
+                "ticker": t["ticker"],
+                "buy_at": buy["ts"],
+                "sell_at": t["timestamp"],
+                "quantity": matched,
+                "buy_price": buy["price"],
+                "sell_price": sell_price,
+                "pnl_brl": round(pnl, 2),
+                "pnl_pct": round(pnl_pct, 2),
+            })
+            buy["qty"] -= matched
+            sell_qty -= matched
+            if buy["qty"] <= 0:
+                queue.pop(0)
+    return completed, queues
+
+
 def get_paper_portfolio() -> list[dict]:
-    """Return open positions: buys not yet fully offset by sells, with avg cost."""
+    """Return open positions (FIFO): remaining buy lots after sells, with avg cost of those lots."""
     init_db()
     with _db() as conn:
         rows = conn.execute(
             "SELECT * FROM paper_trades ORDER BY timestamp ASC"
         ).fetchall()
 
-    # FIFO matching
-    buys: dict[str, list[dict]] = {}
-    sells: dict[str, list[dict]] = {}
-    for r in rows:
-        t = r["ticker"]
-        entry = {
-            "timestamp": r["timestamp"],
-            "price": r["price"],
-            "quantity": r["quantity"],
-            "reason": r["reason"],
-            "session_id": r["session_id"],
-        }
-        if r["action"] == "buy":
-            buys.setdefault(t, []).append(entry)
-        else:
-            sells.setdefault(t, []).append(entry)
+    _, queues = _fifo_match(rows)
 
     positions = []
-    for ticker, buy_list in buys.items():
-        total_qty = sum(b["quantity"] for b in buy_list)
-        sold_qty = sum(s["quantity"] for s in sells.get(ticker, []))
-        open_qty = total_qty - sold_qty
+    for ticker, lots in queues.items():
+        open_qty = sum(l["qty"] for l in lots)
         if open_qty <= 0:
             continue
-        # weighted avg price of all buys (simplified — good enough for 5-day experiment)
-        total_cost = sum(b["quantity"] * b["price"] for b in buy_list)
-        avg_price = total_cost / total_qty
+        total_cost = sum(l["qty"] * l["price"] for l in lots)
+        avg_price = total_cost / open_qty
         positions.append({
             "ticker": ticker,
             "open_quantity": round(open_qty, 4),
             "avg_buy_price": round(avg_price, 4),
-            "total_cost_brl": round(open_qty * avg_price, 2),
-            "first_buy_at": buy_list[0]["timestamp"],
+            "total_cost_brl": round(total_cost, 2),
+            "first_buy_at": lots[0]["ts"],
         })
 
     return positions
@@ -326,41 +346,10 @@ def get_trade_outcomes(
     total_sell_value = float(totals["total_sell"])
     cash_balance = initial_capital - total_buy_value + total_sell_value
 
-    completed: list[dict] = []
     open_positions = get_paper_portfolio()
 
     # FIFO realized P&L for the filtered period
-    by_ticker: dict[str, list] = {}
-    for r in rows:
-        by_ticker.setdefault(r["ticker"], []).append(r)
-
-    for ticker, trades in by_ticker.items():
-        buy_queue: list[dict] = []
-        for t in trades:
-            if t["action"] == "buy":
-                buy_queue.append({"price": t["price"], "qty": t["quantity"], "ts": t["timestamp"]})
-            else:  # sell
-                sell_qty = t["quantity"]
-                sell_price = t["price"]
-                while sell_qty > 0 and buy_queue:
-                    buy = buy_queue[0]
-                    matched = min(buy["qty"], sell_qty)
-                    pnl = (sell_price - buy["price"]) * matched
-                    pnl_pct = (sell_price - buy["price"]) / buy["price"] * 100
-                    completed.append({
-                        "ticker": ticker,
-                        "buy_at": buy["ts"],
-                        "sell_at": t["timestamp"],
-                        "quantity": matched,
-                        "buy_price": buy["price"],
-                        "sell_price": sell_price,
-                        "pnl_brl": round(pnl, 2),
-                        "pnl_pct": round(pnl_pct, 2),
-                    })
-                    buy["qty"] -= matched
-                    sell_qty -= matched
-                    if buy["qty"] <= 0:
-                        buy_queue.pop(0)
+    completed, _ = _fifo_match(rows)
 
     realized_pnl = sum(c["pnl_brl"] for c in completed)
     cost_of_open = sum(p["total_cost_brl"] for p in open_positions)
