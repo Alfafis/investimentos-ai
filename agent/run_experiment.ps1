@@ -42,14 +42,15 @@ Execute o pipeline completo do playbook de investimentos:
 
 Se mercado aberto:
 5. run_investing_decision (watchlist=$Watchlist, posicoes do portfolio atual, cash=$Cash)
-6. Para cada recomendacao de venda: save_paper_trade (action=sell, com preco atual e razao)
-7. Para cada recomendacao de compra aprovada pelos criterios do playbook: save_paper_trade (action=buy)
+6. Para cada recomendacao de venda: save_paper_trade (action=sell, session_id='$SessionId', com preco atual e razao)
+7. Para cada recomendacao de compra aprovada pelos criterios do playbook: save_paper_trade (action=buy, session_id='$SessionId')
 8. save_decision (session_id='$SessionId') com JSON contendo: macro, portfolio_state, scores, sell_signals, buy_recommendations, reasoning, alertas
 
 Se mercado fechado:
 5. score_tickers para a watchlist (preparacao para proxima abertura)
 6. save_decision com analise pre-mercado
 
+Se save_paper_trade responder duplicate=true, o trade ja estava registrado - nao repita.
 Criterios do playbook sao lei. Justifique cada decisao de forma auditavel.
 
 ULTIMO PASSO (obrigatorio): sua resposta final deve ser exclusivamente o relatorio da sessao

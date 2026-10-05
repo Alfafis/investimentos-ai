@@ -8,11 +8,14 @@ Tables:
 import csv
 import io
 import json
+import logging
 import os
 import sqlite3
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
-from typing import Optional
+from typing import NamedTuple, Optional
+
+logger = logging.getLogger(__name__)
 
 _DB_PATH = os.environ.get("EXPERIMENT_DB_PATH", "/data/experiment.db")
 _DATA_DIR = os.path.dirname(_DB_PATH) or "."
@@ -43,7 +46,11 @@ def _db():
         conn.close()
 
 
+_IDEMPOTENCY_INDEX_WARNED = False
+
+
 def init_db() -> None:
+    global _IDEMPOTENCY_INDEX_WARNED
     with _db() as conn:
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS decisions (
@@ -65,17 +72,38 @@ def init_db() -> None:
                 stop_price   REAL,
                 target_price REAL,
                 reason       TEXT,
-                session_id   TEXT
+                session_id   TEXT,
+                idempotency_key TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_trades_ticker ON paper_trades(ticker);
             CREATE INDEX IF NOT EXISTS idx_trades_ts     ON paper_trades(timestamp);
         """)
         # Migrate existing DBs: add columns if absent
-        for col, typedef in [("stop_price", "REAL"), ("target_price", "REAL")]:
+        for col, typedef in [
+            ("stop_price", "REAL"),
+            ("target_price", "REAL"),
+            ("idempotency_key", "TEXT"),
+        ]:
             try:
                 conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {typedef}")
             except sqlite3.OperationalError:
                 pass  # column already exists
+        # Idempotency: one row per key. NULL keys (legacy rows, calls without
+        # session_id/key) never conflict. If an old DB somehow holds duplicate
+        # keys the index cannot be built — keep the data, warn, and fall back to
+        # the check-then-insert in save_paper_trade (no race protection).
+        try:
+            conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_trades_idempotency_key "
+                "ON paper_trades(idempotency_key)"
+            )
+        except sqlite3.IntegrityError as e:
+            if not _IDEMPOTENCY_INDEX_WARNED:
+                logger.warning(
+                    "paper_trades: índice único de idempotency_key não criado "
+                    "(duplicatas existentes no banco, nada foi apagado): %s", e
+                )
+                _IDEMPOTENCY_INDEX_WARNED = True
 
 
 # ---------------------------------------------------------------------------
@@ -144,6 +172,37 @@ def get_decision_log(
 # Paper trades
 # ---------------------------------------------------------------------------
 
+class SavedTrade(NamedTuple):
+    id: int          # row id — the existing row's id when the key already existed
+    created: bool    # False when the call was a duplicate (nothing inserted)
+    trade: dict      # the persisted row (existing row on duplicate)
+
+
+def paper_trade_idempotency_key(
+    action: str,
+    ticker: str,
+    session_id: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+) -> Optional[str]:
+    """
+    Explicit key wins. Otherwise, with a session_id, default to
+    "<session_id>:<action>:<TICKER>" (one buy and one sell per ticker per
+    session). Without either, return None: no idempotency (legacy behaviour).
+    """
+    if idempotency_key is not None and idempotency_key.strip():
+        return idempotency_key.strip()
+    if session_id is not None and session_id.strip():
+        return f"{session_id.strip()}:{action.lower()}:{ticker.upper()}"
+    return None
+
+
+def _trade_by_key(conn: sqlite3.Connection, key: str) -> Optional[sqlite3.Row]:
+    return conn.execute(
+        "SELECT * FROM paper_trades WHERE idempotency_key = ? ORDER BY id ASC LIMIT 1",
+        (key,),
+    ).fetchone()
+
+
 def save_paper_trade(
     action: str,
     ticker: str,
@@ -153,21 +212,39 @@ def save_paper_trade(
     session_id: Optional[str] = None,
     stop_price: Optional[float] = None,
     target_price: Optional[float] = None,
-) -> int:
+    idempotency_key: Optional[str] = None,
+) -> SavedTrade:
     init_db()
     if action.lower() == "buy" and stop_price is not None and stop_price >= price:
         raise ValueError(f"stop_price {stop_price} >= entry {price} — invalid for buy")
     if action.lower() == "sell" and stop_price is not None and stop_price <= price:
         raise ValueError(f"stop_price {stop_price} <= entry {price} — invalid for sell")
+    key = paper_trade_idempotency_key(action, ticker, session_id, idempotency_key)
     ts = datetime.now(timezone.utc).isoformat()
     with _db() as conn:
-        cur = conn.execute(
-            """INSERT INTO paper_trades
-               (timestamp, action, ticker, price, quantity, stop_price, target_price, reason, session_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (ts, action.lower(), ticker.upper(), price, quantity, stop_price, target_price, reason, session_id),
-        )
-        return cur.lastrowid
+        if key is not None:
+            existing = _trade_by_key(conn, key)
+            if existing:
+                return SavedTrade(existing["id"], False, dict(existing))
+        try:
+            cur = conn.execute(
+                """INSERT INTO paper_trades
+                   (timestamp, action, ticker, price, quantity, stop_price, target_price,
+                    reason, session_id, idempotency_key)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (ts, action.lower(), ticker.upper(), price, quantity, stop_price,
+                 target_price, reason, session_id, key),
+            )
+        except sqlite3.IntegrityError:
+            # Concurrent insert with the same key won the race.
+            existing = _trade_by_key(conn, key) if key is not None else None
+            if existing is None:
+                raise
+            return SavedTrade(existing["id"], False, dict(existing))
+        row = conn.execute(
+            "SELECT * FROM paper_trades WHERE id = ?", (cur.lastrowid,)
+        ).fetchone()
+        return SavedTrade(cur.lastrowid, True, dict(row))
 
 
 def get_paper_portfolio() -> list[dict]:

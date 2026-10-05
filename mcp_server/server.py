@@ -601,11 +601,24 @@ def save_paper_trade(
     session_id: Optional[str] = None,
     stop_price: Optional[float] = None,
     target_price: Optional[float] = None,
+    idempotency_key: Optional[str] = None,
 ) -> dict:
     """
     Record a virtual buy or sell action for paper trading during the experiment.
 
     No real money moves. This is the execution log for tracking decisions.
+
+    IDEMPOTENT: always pass session_id. Re-running a routine must not duplicate
+    a trade, so each call is keyed:
+      - idempotency_key given      → that key
+      - else, session_id given     → "<session_id>:<action>:<TICKER>"
+                                     (one buy and one sell per ticker per session)
+      - neither                    → no protection (avoid)
+    If the key was already recorded, nothing is inserted: the response has
+    "duplicate": true and the EXISTING trade. That is success — do not retry.
+    Only for a genuinely distinct second trade of the same ticker+action in the
+    same session (e.g. scaling in, second partial sell), pass an explicit
+    idempotency_key such as "<session_id>:buy:PETR4:2".
 
     Args:
         action: "buy" or "sell"
@@ -615,24 +628,46 @@ def save_paper_trade(
         stop_price: Stop-loss price (must be < price for buys, > price for sells)
         target_price: Take-profit target price
         reason: Short human-readable rationale, e.g. "RSI oversold + above EMA200"
-        session_id: Optional session tag to group trades with decisions
+        session_id: Session tag of the current routine (the "Sessao:" line of the prompt)
+        idempotency_key: Optional explicit key; only needed for a 2nd distinct
+                         trade of the same ticker+action in the same session
 
     Returns:
-        {"saved": true, "id": <row_id>, "trade_value_brl": <price * quantity>}
+        New trade: {"saved": true, "duplicate": false, "id", "trade_value_brl",
+                    "stop_price", "target_price", "idempotency_key"}
+        Duplicate: {"saved": true, "duplicate": true, "id" (existing row),
+                    "trade_value_brl", "stop_price", "target_price",
+                    "idempotency_key", "existing_trade": {...}, "message"}
+        Invalid input: {"error": "..."}
     """
     if action.lower() not in ("buy", "sell"):
         return {"error": f"action must be 'buy' or 'sell', got '{action}'"}
     try:
-        row_id = _save_paper_trade(action, ticker, price, quantity, reason, session_id, stop_price, target_price)
+        result = _save_paper_trade(
+            action, ticker, price, quantity, reason, session_id,
+            stop_price, target_price, idempotency_key,
+        )
     except ValueError as e:
         return {"error": str(e)}
-    return {
+    t = result.trade
+    response = {
         "saved": True,
-        "id": row_id,
-        "trade_value_brl": round(price * quantity, 2),
-        "stop_price": stop_price,
-        "target_price": target_price,
+        "duplicate": not result.created,
+        "id": result.id,
+        "trade_value_brl": round(t["price"] * t["quantity"], 2),
+        "stop_price": t["stop_price"],
+        "target_price": t["target_price"],
+        "idempotency_key": t["idempotency_key"],
     }
+    if not result.created:
+        response["existing_trade"] = {
+            k: t[k] for k in ("timestamp", "action", "ticker", "price", "quantity", "reason", "session_id")
+        }
+        response["message"] = (
+            "Trade already recorded for this idempotency_key; nothing new was saved. "
+            "Do not retry with a different key unless this is a genuinely distinct trade."
+        )
+    return response
 
 
 # ---------------------------------------------------------------------------

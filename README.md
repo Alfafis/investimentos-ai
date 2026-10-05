@@ -201,7 +201,7 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 | 16 | `score_tickers` | Score combinado técnica 40% + fund. 40% + sent. 10% + macro 10% |
 | 17 | `save_decision` | Persiste contexto completo de decisão no SQLite |
 | 18 | `get_decision_log` | Lê histórico de decisões por data ou últimas N |
-| 19 | `save_paper_trade` | Registra compra/venda virtual (paper trading) |
+| 19 | `save_paper_trade` | Registra compra/venda virtual (paper trading). Idempotente: mesma `idempotency_key` (padrão `<session_id>:<action>:<TICKER>`) devolve o trade existente com `duplicate: true` |
 | 20 | `get_paper_portfolio` | Posições abertas com custo médio (FIFO) |
 | 21 | `get_trade_outcomes` | Snapshot completo: caixa, P&L realizado/não realizado, patrimônio total, retorno % |
 | 22 | `export_experiment_csv` | Exporta trades e decisões para CSV em `/data/` |

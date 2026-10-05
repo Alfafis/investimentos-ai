@@ -20,6 +20,7 @@ REGRAS ABSOLUTAS (não negociáveis):
 2. NÃO crie arquivos de nenhum tipo. O relatório final é entregue como sua resposta de texto; o runner (run_rotina.ps1) grava em logs/.
 3. Se uma MCP tool falhar: reporte o erro na conversa e PARE essa etapa. NUNCA crie fallback, NUNCA improvise, NUNCA acesse o filesystem como alternativa.
 4. Toda persistência vai exclusivamente para save_decision e save_paper_trade via MCP.
+5. Em todo save_paper_trade, passe session_id igual ao valor da linha Sessao: no topo deste prompt (idempotência: reexecutar a rotina não duplica o trade). Se a tool responder duplicate=true, o trade já estava registrado — não repita.
 
 Execute nesta ordem:
 
