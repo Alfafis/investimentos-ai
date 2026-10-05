@@ -18,10 +18,11 @@ Watchlist padrão: VALE3, ITUB4, PETR4, B3SA3, SBSP3, ABEV3, WEGE3, BBAS3, PRIO3
 Capital inicial do experimento: R$ 5.000 (fixo — não altere este valor)
 
 REGRAS ABSOLUTAS (não negociáveis):
-1. Use APENAS MCP tools. NUNCA use Bash, Python, Read, Edit ou qualquer ferramenta de filesystem — exceto Write no último passo desta rotina para gerar o relatório .md em logs/.
-2. NÃO crie arquivos de nenhum tipo — exceto o relatório final .md em logs/ no último passo (único arquivo permitido por execução, nunca sobrescreva).
+1. Use APENAS MCP tools. NUNCA use Bash, Python, Read, Write, Edit ou qualquer ferramenta de filesystem (o runner bloqueia todas elas).
+2. NÃO crie arquivos de nenhum tipo. O relatório final é entregue como sua resposta de texto; o runner (run_rotina.ps1) grava em logs/.
 3. Se uma MCP tool falhar: reporte o erro na conversa e PARE essa etapa. NUNCA crie fallback, NUNCA improvise, NUNCA acesse o filesystem como alternativa.
 4. Toda persistência vai exclusivamente para save_decision e save_paper_trade via MCP.
+5. Em todo save_paper_trade, passe session_id igual ao valor da linha Sessao: no topo deste prompt (idempotência: reexecutar a rotina não duplica o trade). Se a tool responder duplicate=true, o trade já estava registrado — não repita.
 
 Execute nesta ordem:
 
@@ -73,9 +74,9 @@ Regras invioláveis do playbook:
 - Ibovespa ≥ ±3% → modo conservador, sem novas compras
 - Toda decisão deve ter justificativa auditável registrada
 
-ÚLTIMO PASSO — Relatório Markdown (obrigatório, use a ferramenta Write):
-- Arquivo: logs/investing-YYYY-MM-DD-10h.md  (ex: logs/investing-2026-05-25-10h.md)
-- NÃO sobrescreva — timestamp no nome garante unicidade
+ÚLTIMO PASSO — Relatório Markdown (obrigatório):
+- Sua resposta final deve ser EXCLUSIVAMENTE o relatório abaixo, em markdown, sem texto antes ou depois.
+- NÃO use a ferramenta Write — o runner grava sua resposta final em logs/ com nome único.
 - Conteúdo:
 
 # Pipeline Diário de Investimentos — YYYY-MM-DD 10h

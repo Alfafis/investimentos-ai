@@ -42,20 +42,21 @@ Execute o pipeline completo do playbook de investimentos:
 
 Se mercado aberto:
 5. run_investing_decision (watchlist=$Watchlist, posicoes do portfolio atual, cash=$Cash)
-6. Para cada recomendacao de venda: save_paper_trade (action=sell, com preco atual e razao)
-7. Para cada recomendacao de compra aprovada pelos criterios do playbook: save_paper_trade (action=buy)
+6. Para cada recomendacao de venda: save_paper_trade (action=sell, session_id='$SessionId', com preco atual e razao)
+7. Para cada recomendacao de compra aprovada pelos criterios do playbook: save_paper_trade (action=buy, session_id='$SessionId')
 8. save_decision (session_id='$SessionId') com JSON contendo: macro, portfolio_state, scores, sell_signals, buy_recommendations, reasoning, alertas
 
 Se mercado fechado:
 5. score_tickers para a watchlist (preparacao para proxima abertura)
 6. save_decision com analise pre-mercado
 
+Se save_paper_trade responder duplicate=true, o trade ja estava registrado - nao repita.
 Criterios do playbook sao lei. Justifique cada decisao de forma auditavel.
 
-ULTIMO PASSO (obrigatorio): Use a ferramenta Write para gerar o relatorio da sessao:
-- Arquivo: logs/investing-$SessionId.md
-- NAO sobrescreva — o SessionId no nome garante unicidade
-- Conteudo em markdown:
+ULTIMO PASSO (obrigatorio): sua resposta final deve ser exclusivamente o relatorio da sessao
+em markdown, sem texto antes ou depois. NAO use a ferramenta Write (ela esta bloqueada) - este
+runner grava a resposta final em logs/investing-$SessionId.md.
+Conteudo:
 
 # Pipeline Diario de Investimentos — $SessionId
 
@@ -82,15 +83,50 @@ ULTIMO PASSO (obrigatorio): Use a ferramenta Write para gerar o relatorio da ses
 _Sessao: $SessionId | Gerado: [timestamp completo]_
 "@
 
+# SEGURANCA: mesma politica de run_rotina.ps1 (ver comentario la). O agente le RSS
+# externo; prompt injection nao pode virar comando na maquina. Nada de
+# --dangerously-skip-permissions: so tools MCP da allowlist, resto negado sem prompt.
+$McpConfig = Join-Path $PSScriptRoot "mcp-config.json"
+$AllowedTools = @(
+    "get_macro_context", "get_decision_log", "get_paper_portfolio", "get_trade_outcomes",
+    "run_investing_decision", "score_tickers", "save_decision", "save_paper_trade"
+) | ForEach-Object { "mcp__investimentos-ai__$_" }
+$AllowedTools = $AllowedTools -join ","
+$DeniedTools  = "Bash,PowerShell,Write,Edit,NotebookEdit,WebFetch,WebSearch,Read,Glob,Grep"
+
+$ReportFile = Join-Path $LogDir "investing-$SessionId.md"
+$n = 2
+while (Test-Path $ReportFile) {
+    $ReportFile = Join-Path $LogDir "investing-$SessionId-$n.md"
+    $n++
+}
+
 Write-Log "[$SessionId] Iniciando sessao do agente"
 
 try {
-    claude -p $UserPrompt --system-prompt $SystemPrompt --max-turns 30 --dangerously-skip-permissions 2>&1 | ForEach-Object {
+    $Report = New-Object System.Collections.Generic.List[string]
+    claude -p $UserPrompt --system-prompt $SystemPrompt --max-turns 30 `
+        --mcp-config $McpConfig --strict-mcp-config `
+        --permission-mode dontAsk `
+        --allowedTools $AllowedTools `
+        --disallowedTools $DeniedTools 2>&1 | ForEach-Object {
         $line = "$_"
         [System.IO.File]::AppendAllText($LogFile, "$line`n", $utf8NoBom)
         Write-Host $line
+        # stdout (sem stderr) do modo -p text = resposta final = relatorio
+        if ($_ -isnot [System.Management.Automation.ErrorRecord]) { $Report.Add($line) }
     }
-    Write-Log "[$SessionId] Sessao concluida com sucesso"
+    $ClaudeExit = $LASTEXITCODE
+
+    if ($Report.Count -gt 0) {
+        [System.IO.File]::WriteAllText($ReportFile, (($Report -join "`n") + "`n"), $utf8NoBom)
+        Write-Log "[$SessionId] Relatorio: $ReportFile"
+    }
+    if ($ClaudeExit -ne 0) {
+        Write-Log "[$SessionId] ERRO: claude saiu com codigo $ClaudeExit"
+    } else {
+        Write-Log "[$SessionId] Sessao concluida com sucesso"
+    }
 } catch {
     Write-Log "[$SessionId] ERRO: $_"
 }

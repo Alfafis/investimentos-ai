@@ -80,7 +80,7 @@ docker compose up --build
 |---------|-----|
 | REST API + Swagger | `http://localhost:8000/docs` |
 | MCP HTTP server | `http://localhost:8001` |
-| Redis | `localhost:6379` |
+| Redis | `127.0.0.1:6380` |
 
 ### 3. Local (sem Docker)
 
@@ -96,6 +96,25 @@ python -m mcp_server.server
 # MCP server (HTTP)
 python -m mcp_server.server --transport streamable-http --port 8001
 ```
+
+### 4. Permissões do agente autônomo (allowlist)
+
+O agente roda sem supervisão e lê texto externo (RSS via `scan_market_news` e `get_sentiment`).
+Uma manchete com prompt injection não pode virar comando na máquina, por isso os runners
+(`agent/run_rotina.ps1`, `agent/run_experiment.ps1`) **não** usam `--dangerously-skip-permissions`:
+
+| Flag | Efeito |
+|------|--------|
+| `--mcp-config agent/mcp-config.json --strict-mcp-config` | Carrega só o servidor `investimentos-ai` (`http://127.0.0.1:8001/mcp`) do arquivo versionado; ignora MCPs globais da máquina |
+| `--permission-mode dontAsk` | Tool fora da allowlist é negada na hora — não trava esperando prompt |
+| `--allowedTools mcp__investimentos-ai__<tool>,...` | Só as tools MCP usadas pelas rotinas (lista explícita no runner) |
+| `--disallowedTools Bash,PowerShell,Write,Edit,NotebookEdit,WebFetch,WebSearch,Read,Glob,Grep` | Remove essas tools do contexto, mesmo que o `settings.json` da máquina as libere |
+
+Consequências:
+- O agente não escreve arquivos. O relatório `.md` é a resposta final do `claude -p`, gravada pelo runner em `logs/`.
+- O MCP server precisa estar rodando em `127.0.0.1:8001` antes das rotinas (`docker compose up -d`). Não é preciso `claude mcp add`.
+- Para liberar uma tool MCP nova para o agente, adicione o nome em `$AllowedTools` no runner. Nunca libere Bash, Write, Edit, WebFetch nem WebSearch.
+- Requer Claude Code com suporte a `--permission-mode dontAsk` e `--strict-mcp-config`. Em versão antiga o CLI recusa o flag e a rotina falha com erro no log, sem rodar sem proteção.
 
 ---
 
@@ -182,7 +201,7 @@ Saídas universais: stop-loss -8% e take-profit +20% (configuráveis).
 | 16 | `score_tickers` | Score combinado técnica 40% + fund. 40% + sent. 10% + macro 10% |
 | 17 | `save_decision` | Persiste contexto completo de decisão no SQLite |
 | 18 | `get_decision_log` | Lê histórico de decisões por data ou últimas N |
-| 19 | `save_paper_trade` | Registra compra/venda virtual (paper trading) |
+| 19 | `save_paper_trade` | Registra compra/venda virtual (paper trading). Idempotente: mesma `idempotency_key` (padrão `<session_id>:<action>:<TICKER>`) devolve o trade existente com `duplicate: true` |
 | 20 | `get_paper_portfolio` | Posições abertas com custo médio (FIFO) |
 | 21 | `get_trade_outcomes` | Snapshot completo: caixa, P&L realizado/não realizado, patrimônio total, retorno % |
 | 22 | `export_experiment_csv` | Exporta trades e decisões para CSV em `/data/` |
@@ -241,7 +260,7 @@ Start-ScheduledTask -TaskName "InvestimentosAI-Radar"       # disparar manualmen
 Get-ScheduledTask -TaskName "InvestimentosAI-*" | Disable-ScheduledTask  # pausar tudo
 ```
 
-Logs em `logs/agent-<rotina>-YYYY-MM-DD.log` e relatórios em `logs/<rotina>-YYYY-MM-DD-<hora>.md` (ignorados pelo git).
+Logs em `logs/agent-<rotina>-YYYY-MM-DD.log` e relatórios em `logs/<rotina>-YYYY-MM-DD-<HH>h<MM>.md` (ignorados pelo git). O relatório é gravado pelo runner a partir da resposta final do agente — o agente não tem Write.
 
 ### Persistência (SQLite via Docker volume)
 
@@ -274,6 +293,54 @@ docker cp investimentos-ai-mcp-1:/data/decisions.csv ./decisions.csv
 
 - **Primário:** Redis com TTL configurável (`CACHE_TTL_SECONDS`, padrão 60s)
 - **Fallback:** dict in-memory se Redis indisponível
+
+---
+
+## Resultados e aprendizados
+
+Experimento de paper trading de 5 dias úteis (capital inicial de R$ 5.000), com seis rotinas agendadas rodando `claude -p`. A análise de 28 logs (6 agentes x 4 dias, de 2026-05-25 a 2026-05-28) levantou 9 falhas; o estado de cada uma está abaixo.
+
+### O que funcionou
+
+- **Vetos por fundamentos.** VALE3 foi vetada 3 vezes em 4 dias (P/L 25, ROE 6,84%, DCF -40%) mesmo com sinal técnico de compra com confiança 1,0.
+- **Saída por tempo.** O time stop de ABEV3 foi executado sem desvio: 5 pregões, +1,77%.
+- **Alerta de EMA200.** O risco de CMIG4 perder a EMA200 foi apontado 2 dias antes e escalado duas vezes no dia 28; o playbook protegeu sem intervenção.
+
+### Resultado da carteira
+
+Último registro nas notas (2026-05-28): R$ 5.008,86, +0,18%, 100% em caixa.
+
+### As 9 falhas encontradas
+
+| # | Falha | Tratamento |
+|---|-------|-----------|
+| 1 | `score_tickers` não aplicava o veto de preço abaixo da EMA200 (SUZB3 saiu "buy" a -14,9% da EMA200) | Corrigido: veto no scorer (`d276b80`) |
+| 2 | Rotina das 09h ativava Setup B/C sem checar fundamentos (VALE3, 3 dias seguidos) | Em aberto: a rotina `agent/rotina-03-trader-pre.md` ainda não chama `fundamental_analysis` |
+| 3 | Rotinas executadas duas vezes (radar, abertura, trader-pre) | Parcial: `save_decision` idempotente com `session_id` único (`d276b80`) e `save_paper_trade` idempotente por `idempotency_key` (`acd1393`). O lock de execução no scheduler continua em aberto |
+| 4 | `run_investing_decision` voltou vazio sem erro | Parcial: corrigida a causa (caixa ignorado quando `positions=[]`, o que zerava o Kelly) em `d276b80`. Retorno de erro explícito continua em aberto |
+| 5 | Stop de CMIG4 (R$ 15,06) acima da entrada (R$ 11,30) | Corrigido: `save_paper_trade` rejeita stop >= entrada em compra e stop <= entrada em venda (`d276b80`) |
+| 6 | Stop de ABEV3 divergente entre rotinas por 2 sessões | Em aberto: `stop_price` e `target_price` agora são gravados em `paper_trades` (`d276b80`), mas `get_paper_portfolio` não os devolve e as rotinas ainda calculam o stop por conta própria |
+| 7 | NLP com falso negativo em manchetes financeiras BR (SUZB3: `sentiment_score=-1.0`) | Parcial: termos como "autoriza", "joint venture" e "bilhões" adicionados ao léxico (`d276b80`). A regra de `review_manual` antes do veto continua em aberto |
+| 8 | Volume não verificável (Setup C exige volume >= 120% da média de 20d) | Corrigido: `technical_analysis` devolve `volume_last`, `volume_avg_20d` e `volume_ratio_20d` (`d276b80`) |
+| 9 | `ibovespa_change_pct = null` intermitente | Parcial: corrigido o `isinstance` incorreto em `macro.py` (`d276b80`). Cache do último valor do BCB com flag `stale_data` continua em aberto |
+
+Fora da lista de 9, o commit `410f7ec` trocou `--dangerously-skip-permissions` por allowlist de tools MCP no agente (seção "Permissões do agente autônomo"), porque o agente lê texto externo (RSS) sem supervisão.
+
+Bugs conhecidos que ainda não foram corrigidos estão registrados como `xfail` em `tests/` (venda sem posição aberta aceita, `PETR4` e `PETR4.SA` tratados como tickers diferentes, custo médio que ignora o consumo FIFO, Sortino sem retorno negativo devolvendo NaN).
+
+## Testes
+
+Os testes não usam rede: yfinance, Brapi, BCB e RSS são substituídos por mocks e sockets ficam bloqueados. O banco SQLite é temporário.
+
+Requer Python 3.10 ou superior (o `mcp_server/server.py` exige). Use um venv:
+
+```bash
+python3.12 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+python -m pytest -q
+```
+
+`requirements-dev.txt` fixa `mcp<2`, porque `server.py` usa `mcp.server.fastmcp`, que o `mcp` 2.x renomeou. Os testes marcados `xfail(strict=True)` documentam bugs conhecidos: ao corrigir um deles, o teste passa a falhar como XPASS e o marcador deve ser removido.
 
 ---
 
